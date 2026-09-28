@@ -18,11 +18,16 @@ const globalForPrisma = globalThis as typeof globalThis & { __prisma?: PrismaCli
 export function getPrisma(): PrismaClient {
   if (globalForPrisma.__prisma) return globalForPrisma.__prisma;
 
-  const { DATABASE_URL, NODE_ENV } = getEnv();
+  const { DATABASE_URL, DATABASE_POOL_MAX, NODE_ENV } = getEnv();
   if (!DATABASE_URL) throw new DatabaseNotConfiguredError();
 
   const client = new PrismaClient({
-    adapter: new PrismaPg({ connectionString: DATABASE_URL }),
+    // A small pool suits serverless (many instances × pool size ≤ the database's limit); set 1
+    // for single-connection local servers such as `prisma dev`.
+    adapter: new PrismaPg({
+      connectionString: DATABASE_URL,
+      ...(DATABASE_POOL_MAX !== undefined && { max: DATABASE_POOL_MAX }),
+    }),
     log: NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });
   globalForPrisma.__prisma = client;

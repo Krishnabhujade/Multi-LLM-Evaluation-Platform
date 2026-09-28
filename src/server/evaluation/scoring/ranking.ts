@@ -1,7 +1,7 @@
+import { TIE_EPSILON } from "@/lib/scoring";
 import type { WeightedScore } from "@/server/evaluation/scoring/overall";
 
-/** Overall scores closer than this are reported as a statistical tie. */
-export const TIE_EPSILON = 0.05;
+export { TIE_EPSILON };
 
 export interface RankInput {
   responseId: string;

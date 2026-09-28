@@ -48,6 +48,11 @@ const EnvSchema = z.object({
   DATABASE_URL: optionalString,
   DIRECT_DATABASE_URL: optionalString,
   TEST_DATABASE_URL: optionalString,
+  /** Max connections in the runtime pool (optional; the pg default is 10). */
+  DATABASE_POOL_MAX: z.preprocess(
+    emptyToUndefined,
+    z.coerce.number().int().min(1).max(50).optional(),
+  ),
 
   // Redis is optional; an in-memory fallback is used when unset.
   UPSTASH_REDIS_REST_URL: optionalUrl,
