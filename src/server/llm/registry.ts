@@ -3,7 +3,10 @@ import { parseModelRef } from "@/lib/model-ref";
 import { getEnv, type Env } from "@/server/env";
 import { resolveCatalogModels } from "@/server/llm/catalog";
 import { DemoProvider } from "@/server/llm/providers/demo";
+import { GeminiProvider } from "@/server/llm/providers/gemini";
 import { GroqProvider } from "@/server/llm/providers/groq";
+import { HuggingFaceProvider } from "@/server/llm/providers/huggingface";
+import { OpenRouterProvider } from "@/server/llm/providers/openrouter";
 import type { LLMProvider, ModelInfo } from "@/server/llm/types";
 
 export type ModelUnavailableReason = "UNKNOWN_PROVIDER" | "NOT_CONFIGURED" | "UNKNOWN_MODEL";
@@ -122,6 +125,24 @@ export function createProviderRegistry(
     new GroqProvider({
       apiKey: env.GROQ_API_KEY,
       models: resolveCatalogModels("groq", env.GROQ_MODELS),
+      fetch: fetchImpl,
+    }),
+    new GeminiProvider({
+      apiKey: env.GEMINI_API_KEY,
+      models: resolveCatalogModels("gemini", env.GEMINI_MODELS),
+      fetch: fetchImpl,
+    }),
+    new OpenRouterProvider({
+      apiKey: env.OPENROUTER_API_KEY,
+      defaultModels: resolveCatalogModels("openrouter"),
+      overrideIds: env.OPENROUTER_MODELS,
+      freeOnly: env.OPENROUTER_FREE_ONLY,
+      appUrl: env.APP_URL,
+      fetch: fetchImpl,
+    }),
+    new HuggingFaceProvider({
+      apiKey: env.HUGGINGFACE_API_KEY,
+      models: resolveCatalogModels("huggingface", env.HUGGINGFACE_MODELS),
       fetch: fetchImpl,
     }),
     new DemoProvider({ enabled: env.ENABLE_DEMO_PROVIDER, models: resolveCatalogModels("demo") }),

@@ -101,7 +101,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
   protected buildHeaders(): Record<string, string> {
     return {
-      Authorization: `Bearer ${this.options.apiKey}`,
+      ...(this.options.apiKey && { Authorization: `Bearer ${this.options.apiKey}` }),
       "Content-Type": "application/json",
       ...this.options.extraHeaders,
     };

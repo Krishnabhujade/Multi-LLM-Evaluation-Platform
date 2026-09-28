@@ -104,12 +104,18 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     id: "huggingface",
     name: "Hugging Face",
     isDemo: false,
+    // Router suffix picks the serving provider (`:cheapest` stretches the free monthly credits);
+    // pricing and context window are filled in live from the router's /models endpoint.
     models: [
       {
-        modelId: "openai/gpt-oss-20b:fastest",
-        displayName: "GPT-OSS 20B (HF router)",
-        capabilities: ["general", "reasoning", "coding", "fast"],
-        contextWindow: 131_072,
+        modelId: "deepseek-ai/DeepSeek-V4-Flash:cheapest",
+        displayName: "DeepSeek V4 Flash (HF)",
+        capabilities: ["general", "reasoning", "coding", "long-context"],
+      },
+      {
+        modelId: "Qwen/Qwen3-Coder-30B-A3B-Instruct:cheapest",
+        displayName: "Qwen3 Coder 30B (HF)",
+        capabilities: ["coding", "general"],
       },
     ],
   },
