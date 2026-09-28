@@ -151,3 +151,24 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
 export function findCatalogProvider(providerId: string) {
   return PROVIDER_CATALOG.find((provider) => provider.id === providerId);
 }
+
+/**
+ * The effective model list for a provider: the env override when one is set (unknown IDs get
+ * generic metadata, known IDs keep their catalog metadata), otherwise the catalog defaults.
+ */
+export function resolveCatalogModels(
+  providerId: string,
+  overrideIds: string[] = [],
+): CatalogModel[] {
+  const defaults = findCatalogProvider(providerId)?.models ?? [];
+  if (overrideIds.length === 0) return [...defaults];
+
+  return overrideIds.map(
+    (modelId) =>
+      defaults.find((model) => model.modelId === modelId) ?? {
+        modelId,
+        displayName: modelId,
+        capabilities: ["general"],
+      },
+  );
+}
