@@ -79,7 +79,11 @@ export function syntheticJudgement(messages: ChatMessage[]): string {
   const keys = [
     ...new Set([...text.matchAll(/"([a-z][a-z0-9_]*)"\s*:\s*\{\s*"reasoning"/g)].map((m) => m[1]!)),
   ];
-  const candidate = /<candidate_response>([\s\S]*?)<\/candidate_response>/.exec(text)?.[1] ?? "";
+  // The fenced candidate lives in the user message (the system prompt only mentions the tag).
+  const candidate =
+    /<candidate_response>\n?([\s\S]*?)\n?<\/candidate_response>/.exec(
+      lastUserMessage(messages),
+    )?.[1] ?? "";
   const words = candidate.split(/\s+/).filter(Boolean).length;
   const structured = /(^|\n)\s*(#{1,3} |[-*] |\d+\. )/.test(candidate);
 

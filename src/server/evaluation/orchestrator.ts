@@ -1,5 +1,6 @@
 import type { RunEvent } from "@/lib/run-events";
 import { collectCandidates } from "@/server/evaluation/collector";
+import { judgeCandidates, type JudgingDeps } from "@/server/evaluation/judging";
 import type { RunStore } from "@/server/evaluation/store";
 import type { ProviderRegistry } from "@/server/llm/registry";
 import type { Logger } from "@/server/observability/logger";
@@ -26,6 +27,7 @@ export interface OrchestratorDeps {
   /** Overall budget for one run; kept below the platform's maximum function duration. */
   runBudgetMs: number;
   logger: Logger;
+  judge: JudgingDeps["judge"];
   now?: () => number;
 }
 
@@ -100,7 +102,28 @@ export async function executeRun(
       return;
     }
 
-    await deps.store.completeRun(runId, { winnerResponseId: null });
+    const judgements = await judgeCandidates(
+      context,
+      succeeded,
+      {
+        store: deps.store,
+        registry: deps.registry,
+        timeoutMs: deps.timeoutMs,
+        maxRetries: deps.maxRetries,
+        deadline,
+        signal,
+        logger: log,
+        judge: deps.judge,
+      },
+      emit,
+    );
+    const scored = [...judgements.values()].filter((result) => result.ok).length;
+    log.info("Judging finished", { scored, unscored: judgements.size - scored });
+
+    await deps.store.completeRun(runId, {
+      winnerResponseId: null,
+      ...(scored === 0 && { error: "The judge could not score any response." }),
+    });
     emit({ type: "run.completed", runId, winnerResponseId: null });
   } catch (error) {
     log.error("Evaluation run crashed", { error });

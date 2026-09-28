@@ -62,6 +62,18 @@ export interface CandidateOutcome extends CandidateResult {
   slot: CandidateSlot;
 }
 
+/** A judge verdict for one response, as persisted. Scores carry the criterion's name and weight. */
+export type JudgementRecord =
+  | {
+      status: "SCORED";
+      judgedBy: string;
+      summary: string;
+      strengths: string[];
+      weaknesses: string[];
+      scores: Array<{ key: string; name: string; weight: number; score: number; reason: string }>;
+    }
+  | { status: "FAILED"; error: string };
+
 export interface LlmCallRecord {
   runId: string;
   responseId?: string;

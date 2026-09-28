@@ -70,6 +70,8 @@ const EnvSchema = z.object({
   JUDGE_MODEL: z.preprocess(emptyToUndefined, z.string().default("gemini:gemini-3.8-flash")),
   JUDGE_FALLBACK_MODELS: csvList(["groq:openai/gpt-oss-120b", "groq:llama-3.3-70b-versatile"]),
   JUDGE_CONCURRENCY: integer(2, { min: 1, max: 16 }),
+  /** Generous by default: thinking models spend part of the budget on reasoning tokens. */
+  JUDGE_MAX_TOKENS: integer(3_000, { min: 256, max: 16_000 }),
 
   // Behaviour.
   ENABLE_DEMO_PROVIDER: booleanFlag,

@@ -16,6 +16,7 @@ import type {
   CandidateResult,
   CandidateSlot,
   ExecutionContext,
+  JudgementRecord,
   LlmCallRecord,
 } from "@/server/evaluation/types";
 import { findCatalogProvider } from "@/server/llm/catalog";
@@ -206,6 +207,41 @@ export class PrismaEvaluationRepository implements RunStore {
         ...(result.status === "FAILED" && { judgeStatus: "SKIPPED" as const }),
       },
     });
+  }
+
+  async saveJudgement(responseId: string, judgement: JudgementRecord): Promise<void> {
+    if (judgement.status === "FAILED") {
+      await this.prisma.modelResponse.update({
+        where: { id: responseId },
+        data: { judgeStatus: "FAILED", judgeError: judgement.error },
+      });
+      return;
+    }
+    // Replace any previous scores so saving is idempotent.
+    await this.prisma.$transaction([
+      this.prisma.criterionScore.deleteMany({ where: { responseId } }),
+      this.prisma.criterionScore.createMany({
+        data: judgement.scores.map((score) => ({
+          responseId,
+          criterionKey: score.key,
+          criterionName: score.name,
+          weight: score.weight,
+          score: score.score,
+          reason: score.reason,
+        })),
+      }),
+      this.prisma.modelResponse.update({
+        where: { id: responseId },
+        data: {
+          judgeStatus: "SCORED",
+          judgedBy: judgement.judgedBy,
+          judgeSummary: judgement.summary,
+          strengths: judgement.strengths,
+          weaknesses: judgement.weaknesses,
+          judgeError: null,
+        },
+      }),
+    ]);
   }
 
   async recordLlmCalls(calls: LlmCallRecord[]): Promise<void> {

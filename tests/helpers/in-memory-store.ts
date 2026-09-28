@@ -7,10 +7,12 @@ import type {
   CandidateResult,
   CandidateSlot,
   ExecutionContext,
+  JudgementRecord,
   LlmCallRecord,
   RunConfig,
 } from "@/server/evaluation/types";
 import type { ModelPricing } from "@/server/llm/catalog";
+import type { ModelInfo } from "@/server/llm/types";
 
 interface RunState {
   status: RunStatus;
@@ -23,7 +25,9 @@ export class InMemoryRunStore implements RunStore {
   readonly contexts = new Map<string, ExecutionContext>();
   readonly runs = new Map<string, RunState>();
   readonly results = new Map<string, CandidateResult>();
+  readonly judgements = new Map<string, JudgementRecord>();
   readonly calls: LlmCallRecord[] = [];
+  readonly ensuredModels: string[] = [];
 
   add(context: ExecutionContext) {
     this.contexts.set(context.run.id, context);
@@ -50,8 +54,17 @@ export class InMemoryRunStore implements RunStore {
     this.results.set(responseId, result);
   }
 
+  async saveJudgement(responseId: string, judgement: JudgementRecord) {
+    this.judgements.set(responseId, judgement);
+  }
+
   async recordLlmCalls(calls: LlmCallRecord[]) {
     this.calls.push(...calls);
+  }
+
+  async ensureModel(model: ModelInfo) {
+    this.ensuredModels.push(model.ref);
+    return `db_${model.ref}`;
   }
 
   async completeRun(runId: string, outcome: { winnerResponseId: string | null; error?: string }) {

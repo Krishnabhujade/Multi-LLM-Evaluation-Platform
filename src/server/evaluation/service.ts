@@ -32,6 +32,12 @@ export function getOrchestratorDeps(): OrchestratorDeps {
     maxRetries: env.MODEL_MAX_RETRIES,
     runBudgetMs: RUN_BUDGET_MS,
     logger,
+    judge: {
+      // Real fallbacks only: a synthetic demo score must never stand in for a real judgement.
+      fallbackRefs: env.JUDGE_FALLBACK_MODELS,
+      concurrency: env.JUDGE_CONCURRENCY,
+      maxTokens: env.JUDGE_MAX_TOKENS,
+    },
   };
 }
 
@@ -68,6 +74,10 @@ export async function createEvaluation(
   const env = getEnv();
   const registry = getProviderRegistry();
   const repo = getEvaluationRepository();
+
+  if (input.mode === "PAIRWISE") {
+    throw new ApiError(400, "MODE_NOT_SUPPORTED", "Pairwise evaluation is not available yet.");
+  }
 
   // Throws ModelUnavailableError (HTTP 422) for unknown or unconfigured models.
   const candidates = await Promise.all(input.models.map((ref) => registry.resolve(ref)));
