@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DatabaseNotConfiguredError } from "@/server/db/prisma";
+import { RunAlreadyStartedError, RunNotFoundError } from "@/server/evaluation/orchestrator";
 import { ModelUnavailableError } from "@/server/llm/registry";
 import { logger } from "@/server/observability/logger";
 
@@ -44,6 +45,8 @@ export function errorResponse(error: unknown, requestId: string): Response {
   if (error instanceof DatabaseNotConfiguredError) {
     return body(503, "DATABASE_NOT_CONFIGURED", error.message);
   }
+  if (error instanceof RunNotFoundError) return body(404, "NOT_FOUND", error.message);
+  if (error instanceof RunAlreadyStartedError) return body(409, "ALREADY_STARTED", error.message);
 
   logger.error("Unhandled API error", { requestId, error });
   return body(500, "INTERNAL_ERROR", "Something went wrong. Please try again.");

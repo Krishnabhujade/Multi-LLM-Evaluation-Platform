@@ -3,6 +3,7 @@
  * for a given prompt so tests and demos are reproducible, and every response says it is fake.
  */
 import type { ChatMessage } from "@/server/llm/types";
+import { hashToUnit } from "@/server/utils/hash";
 
 const DEMO_FOOTER = "_Synthetic response from a demo model (development data)._";
 
@@ -66,16 +67,6 @@ export function balancedAnswer(prompt: string): string {
     "",
     DEMO_FOOTER,
   ].join("\n");
-}
-
-/** Deterministic pseudo-random number in [0, 1) derived from a string (FNV-1a). */
-export function hashToUnit(text: string): number {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < text.length; index += 1) {
-    hash ^= text.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0) / 0x1_0000_0000;
 }
 
 /**
