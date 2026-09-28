@@ -1,0 +1,249 @@
+// Multi-LLM Evaluation Platform — data model
+//
+//   Provider ─< Model ─< ModelResponse >─ EvaluationRun
+//                           │                  │
+//                           └─< CriterionScore └─< LlmCall (per-attempt trace)
+//
+// An EvaluationRun holds the request (prompt, parameters, criteria snapshot) and the outcome
+// (status, winner). Criteria are snapshotted onto the run so historical results stay
+// reproducible even if criterion definitions or weights change later.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum TaskCategory {
+  GENERAL_QA
+  CODING
+  MATHEMATICS
+  REASONING
+  SUMMARIZATION
+  CREATIVE_WRITING
+  RESEARCH
+  DATA_ANALYSIS
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum EvaluationMode {
+  STANDARD
+  PAIRWISE
+}
+
+enum ResponseStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+enum JudgeStatus {
+  PENDING
+  SCORED
+  FAILED
+  SKIPPED
+}
+
+enum LlmCallKind {
+  CANDIDATE
+  JUDGE
+}
+
+enum LlmCallStatus {
+  SUCCESS
+  FAILED
+}
+
+model Provider {
+  /// Stable slug, e.g. "groq". Matches the adapter id in the provider registry.
+  id        String   @id
+  name      String
+  /// Development-only data (the Demo provider).
+  isDemo    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  models Model[]
+
+  @@map("providers")
+}
+
+model Model {
+  id                String   @id @default(cuid())
+  providerId        String
+  /// The provider's own model identifier, e.g. "llama-3.3-70b-versatile".
+  modelId           String
+  displayName       String
+  capabilities      String[]
+  contextWindow     Int?
+  /// USD per 1M tokens at list price. Estimates for display, not billing — null means "N/A".
+  inputCostPerMTok  Float?
+  outputCostPerMTok Float?
+  isDemo            Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  provider   Provider        @relation(fields: [providerId], references: [id])
+  responses  ModelResponse[]
+  judgedRuns EvaluationRun[] @relation("JudgeModel")
+  llmCalls   LlmCall[]
+
+  @@unique([providerId, modelId])
+  @@map("models")
+}
+
+model Criterion {
+  id            String   @id @default(cuid())
+  /// Stable snake_case key used in the judge's JSON output.
+  key           String
+  name          String
+  description   String
+  rubric        String?
+  /// Percentage points; normalized at scoring time.
+  defaultWeight Float
+  isBuiltIn     Boolean  @default(false)
+  /// Owner of a custom criterion; null for built-ins.
+  userId        String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([userId, key])
+  @@map("criteria")
+}
+
+model EvaluationRun {
+  id               String         @id @default(cuid())
+  userId           String?
+  status           RunStatus      @default(PENDING)
+  mode             EvaluationMode @default(STANDARD)
+  /// When true the judge never sees model or provider names.
+  blind            Boolean        @default(true)
+  category         TaskCategory   @default(GENERAL_QA)
+  prompt           String
+  systemPrompt     String?
+  temperature      Float
+  maxTokens        Int
+  /// Models were chosen by the auto-select router rather than the user.
+  autoSelected     Boolean        @default(false)
+  /// Primary judge configured for this run (fallback judges are recorded per response).
+  judgeModelId     String
+  /// Snapshot of the criteria used: [{ key, name, description, rubric, weight }].
+  criteria         Json
+  /// Seed for the response shuffle, so judging order and labels are reproducible.
+  shuffleSeed      String
+  winnerResponseId String?        @unique
+  error            String?
+  requestId        String?
+  createdAt        DateTime       @default(now())
+  startedAt        DateTime?
+  completedAt      DateTime?
+
+  judgeModel Model           @relation("JudgeModel", fields: [judgeModelId], references: [id])
+  winner     ModelResponse?  @relation("RunWinner", fields: [winnerResponseId], references: [id], onDelete: SetNull)
+  responses  ModelResponse[] @relation("RunResponses")
+  llmCalls   LlmCall[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([category, createdAt(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@map("evaluation_runs")
+}
+
+model ModelResponse {
+  id               String         @id @default(cuid())
+  runId            String
+  modelId          String
+  status           ResponseStatus @default(PENDING)
+  /// Anonymous label shown to the judge ("A", "B", ...), assigned from the seeded shuffle.
+  anonLabel        String
+  /// Position in the shuffled judging order.
+  judgeOrder       Int
+  content          String?
+  finishReason     String?
+  /// Model id reported by the provider (routers may resolve to a concrete model).
+  resolvedModel    String?
+  errorCode        String?
+  errorMessage     String?
+  attempts         Int            @default(0)
+  startedAt        DateTime?
+  completedAt      DateTime?
+  latencyMs        Int?
+  inputTokens      Int?
+  outputTokens     Int?
+  totalTokens      Int?
+  estimatedCostUsd Float?
+  cached           Boolean        @default(false)
+
+  judgeStatus  JudgeStatus @default(PENDING)
+  /// "<provider>:<model>" of the judge that produced the scores (may be a fallback judge).
+  judgedBy     String?
+  judgeSummary String?
+  strengths    String[]
+  weaknesses   String[]
+  judgeError   String?
+  /// Weighted score computed server-side from criterion scores (0–10).
+  overallScore Float?
+  rank         Int?
+  createdAt    DateTime    @default(now())
+
+  run      EvaluationRun    @relation("RunResponses", fields: [runId], references: [id], onDelete: Cascade)
+  model    Model            @relation(fields: [modelId], references: [id])
+  wonRun   EvaluationRun?   @relation("RunWinner")
+  scores   CriterionScore[]
+  llmCalls LlmCall[]
+
+  @@unique([runId, modelId])
+  @@index([modelId, createdAt(sort: Desc)])
+  @@map("model_responses")
+}
+
+model CriterionScore {
+  id            String @id @default(cuid())
+  responseId    String
+  criterionKey  String
+  /// Name and weight are denormalized so historical scores stay meaningful.
+  criterionName String
+  weight        Float
+  score         Float
+  reason        String
+
+  response ModelResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@unique([responseId, criterionKey])
+  @@index([criterionKey])
+  @@map("criterion_scores")
+}
+
+/// One row per provider call attempt (candidates and judges) — the observability trace.
+model LlmCall {
+  id           String        @id @default(cuid())
+  runId        String
+  responseId   String?
+  modelId      String
+  kind         LlmCallKind
+  attempt      Int
+  status       LlmCallStatus
+  errorCode    String?
+  errorMessage String?
+  startedAt    DateTime
+  latencyMs    Int
+  inputTokens  Int?
+  outputTokens Int?
+  requestId    String?
+
+  run      EvaluationRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  response ModelResponse? @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  model    Model          @relation(fields: [modelId], references: [id])
+
+  @@index([runId, startedAt])
+  @@map("llm_calls")
+}
