@@ -25,7 +25,8 @@
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio",
     "db:reset": "prisma migrate reset",
-    "llm:smoke": "tsx --conditions=react-server --env-file-if-exists=.env scripts/llm-smoke.ts"
+    "llm:smoke": "tsx --conditions=react-server --env-file-if-exists=.env scripts/llm-smoke.ts",
+    "eval": "tsx --conditions=react-server --env-file-if-exists=.env scripts/evaluate.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",

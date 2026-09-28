@@ -11,7 +11,7 @@ import type {
 import type { TaskCategory } from "@/lib/categories";
 import { formatModelRef } from "@/lib/model-ref";
 import { upsertModel, upsertProvider } from "@/server/db/catalog-sync";
-import type { RunStore } from "@/server/evaluation/store";
+import type { RunOutcome, RunStore } from "@/server/evaluation/store";
 import type {
   CandidateResult,
   CandidateSlot,
@@ -265,19 +265,24 @@ export class PrismaEvaluationRepository implements RunStore {
     });
   }
 
-  async completeRun(
-    runId: string,
-    outcome: { winnerResponseId: string | null; error?: string },
-  ): Promise<void> {
-    await this.prisma.evaluationRun.update({
-      where: { id: runId },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-        winnerResponseId: outcome.winnerResponseId,
-        error: outcome.error ?? null,
-      },
-    });
+  async completeRun(runId: string, outcome: RunOutcome): Promise<void> {
+    await this.prisma.$transaction([
+      ...(outcome.ranking ?? []).map((entry) =>
+        this.prisma.modelResponse.update({
+          where: { id: entry.responseId },
+          data: { overallScore: entry.overallScore, rank: entry.rank },
+        }),
+      ),
+      this.prisma.evaluationRun.update({
+        where: { id: runId },
+        data: {
+          status: "COMPLETED",
+          completedAt: new Date(),
+          winnerResponseId: outcome.winnerResponseId,
+          error: outcome.error ?? null,
+        },
+      }),
+    ]);
   }
 
   async failRun(runId: string, message: string): Promise<void> {

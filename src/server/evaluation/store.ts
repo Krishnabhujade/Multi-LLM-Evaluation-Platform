@@ -4,7 +4,15 @@ import type {
   JudgementRecord,
   LlmCallRecord,
 } from "@/server/evaluation/types";
+import type { RankingEntry } from "@/server/evaluation/scoring/ranking";
 import type { ModelInfo } from "@/server/llm/types";
+
+export interface RunOutcome {
+  winnerResponseId: string | null;
+  ranking?: RankingEntry[];
+  /** A non-fatal note shown with the results (e.g. the judge could not score anything). */
+  error?: string;
+}
 
 /**
  * Persistence port used by the orchestrator. The production implementation is Prisma
@@ -20,10 +28,8 @@ export interface RunStore {
   recordLlmCalls(calls: LlmCallRecord[]): Promise<void>;
   /** Ensures a model row exists (e.g. a fallback judge) and returns its id. */
   ensureModel(model: ModelInfo): Promise<string>;
-  completeRun(
-    runId: string,
-    outcome: { winnerResponseId: string | null; error?: string },
-  ): Promise<void>;
+  /** Stores overall scores and ranks, sets the winner and marks the run COMPLETED — atomically. */
+  completeRun(runId: string, outcome: RunOutcome): Promise<void>;
   /** Marks the run FAILED and any still-pending responses as aborted. */
   failRun(runId: string, message: string): Promise<void>;
 }

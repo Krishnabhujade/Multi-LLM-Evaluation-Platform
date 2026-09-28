@@ -1,6 +1,8 @@
 import type { RunEvent } from "@/lib/run-events";
 import { collectCandidates } from "@/server/evaluation/collector";
 import { judgeCandidates, type JudgingDeps } from "@/server/evaluation/judging";
+import { weightedOverall } from "@/server/evaluation/scoring/overall";
+import { rankResponses } from "@/server/evaluation/scoring/ranking";
 import type { RunStore } from "@/server/evaluation/store";
 import type { ProviderRegistry } from "@/server/llm/registry";
 import type { Logger } from "@/server/observability/logger";
@@ -117,14 +119,41 @@ export async function executeRun(
       },
       emit,
     );
-    const scored = [...judgements.values()].filter((result) => result.ok).length;
-    log.info("Judging finished", { scored, unscored: judgements.size - scored });
+    const weights = new Map(
+      context.run.criteria.map((criterion) => [criterion.key, criterion.weight]),
+    );
+    const ranking = rankResponses(
+      succeeded.map((outcome) => {
+        const judgement = judgements.get(outcome.slot.responseId);
+        const scores = judgement?.ok
+          ? judgement.judgement.scores.map((verdict) => ({
+              key: verdict.key,
+              score: verdict.score,
+              weight: weights.get(verdict.key) ?? 0,
+            }))
+          : [];
+        return {
+          responseId: outcome.slot.responseId,
+          overall: weightedOverall(scores),
+          scores,
+          latencyMs: outcome.latencyMs,
+        };
+      }),
+    );
+    log.info("Scoring finished", {
+      winnerResponseId: ranking.winnerResponseId,
+      isTie: ranking.isTie,
+      elapsedMs: now() - startedAt,
+    });
 
     await deps.store.completeRun(runId, {
-      winnerResponseId: null,
-      ...(scored === 0 && { error: "The judge could not score any response." }),
+      winnerResponseId: ranking.winnerResponseId,
+      ranking: ranking.entries,
+      ...(ranking.winnerResponseId === null && {
+        error: "The judge could not score any response.",
+      }),
     });
-    emit({ type: "run.completed", runId, winnerResponseId: null });
+    emit({ type: "run.completed", runId, winnerResponseId: ranking.winnerResponseId });
   } catch (error) {
     log.error("Evaluation run crashed", { error });
     const message = "The evaluation failed unexpectedly. Please try again.";

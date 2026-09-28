@@ -298,11 +298,52 @@ describe("evaluation orchestrator — judging", () => {
     expect(noFallback.store.run(second.run.id)).toMatchObject({
       status: "COMPLETED",
       error: "The judge could not score any response.",
+      winnerResponseId: null,
     });
   });
 });
 
-function validJudgement() {
+describe("evaluation orchestrator — scoring and winner", () => {
+  it("computes weighted overall scores, ranks responses and crowns the best one", async () => {
+    // The scripted judge rewards the answer it is shown: A → 9, B → 6, C → 7.5.
+    const scoreFor: Record<string, number> = { "Answer A": 9, "Answer B": 6, "Answer C": 7.5 };
+    const { provider: judge } = createScriptedProvider("judgeco", {
+      judge: async (request) => {
+        const text = request.messages.at(-1)!.content;
+        const answer = Object.keys(scoreFor).find((candidate) => text.includes(candidate))!;
+        return { content: validJudgement(scoreFor[answer]) };
+      },
+    });
+    const { provider } = createScriptedProvider("alpha", {
+      a: answerAfter(1, "Answer A"),
+      b: answerAfter(1, "Answer B"),
+      c: answerAfter(1, "Answer C"),
+      down: failWith(() => new LLMError("UNAVAILABLE", "down")),
+    });
+    const { store, deps } = setup([provider, judge], { maxRetries: 0 });
+    const context = store.add(
+      buildContext(["alpha:a", "alpha:b", "alpha:c", "alpha:down"], {
+        judgeModelRef: "judgeco:judge",
+      }),
+    );
+    const [a, b, c, down] = context.slots.map((slot) => slot.responseId);
+
+    const events = await run(deps, context.run.id);
+
+    expect(store.run(context.run.id)).toMatchObject({ status: "COMPLETED", winnerResponseId: a });
+    expect(store.rankings.get(a!)).toEqual({ responseId: a, overallScore: 9, rank: 1 });
+    expect(store.rankings.get(c!)).toMatchObject({ overallScore: 7.5, rank: 2 });
+    expect(store.rankings.get(b!)).toMatchObject({ overallScore: 6, rank: 3 });
+    expect(store.rankings.has(down!)).toBe(false); // failed responses are never ranked
+    expect(events.at(-1)).toEqual({
+      type: "run.completed",
+      runId: context.run.id,
+      winnerResponseId: a,
+    });
+  });
+});
+
+function validJudgement(score = 7) {
   return JSON.stringify({
     criteria: Object.fromEntries(
       [
@@ -312,7 +353,7 @@ function validJudgement() {
         "completeness",
         "conciseness",
         "instruction_following",
-      ].map((key) => [key, { reasoning: `Reasoning for ${key}.`, score: 7 }]),
+      ].map((key) => [key, { reasoning: `Reasoning for ${key}.`, score }]),
     ),
     summary: "Reasonable answer.",
   });

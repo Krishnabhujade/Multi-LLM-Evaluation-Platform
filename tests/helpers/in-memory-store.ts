@@ -2,7 +2,8 @@ import { BUILT_IN_CRITERIA } from "@/lib/criteria";
 import type { RunStatus } from "@/lib/api-types";
 import { parseModelRef } from "@/lib/model-ref";
 import { anonLabel } from "@/server/evaluation/shuffle";
-import type { RunStore } from "@/server/evaluation/store";
+import type { RankingEntry } from "@/server/evaluation/scoring/ranking";
+import type { RunOutcome, RunStore } from "@/server/evaluation/store";
 import type {
   CandidateResult,
   CandidateSlot,
@@ -26,6 +27,7 @@ export class InMemoryRunStore implements RunStore {
   readonly runs = new Map<string, RunState>();
   readonly results = new Map<string, CandidateResult>();
   readonly judgements = new Map<string, JudgementRecord>();
+  readonly rankings = new Map<string, RankingEntry>();
   readonly calls: LlmCallRecord[] = [];
   readonly ensuredModels: string[] = [];
 
@@ -67,7 +69,8 @@ export class InMemoryRunStore implements RunStore {
     return `db_${model.ref}`;
   }
 
-  async completeRun(runId: string, outcome: { winnerResponseId: string | null; error?: string }) {
+  async completeRun(runId: string, { ranking = [], ...outcome }: RunOutcome) {
+    for (const entry of ranking) this.rankings.set(entry.responseId, entry);
     Object.assign(this.run(runId), { status: "COMPLETED", ...outcome });
   }
 
