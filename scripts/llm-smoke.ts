@@ -1,7 +1,7 @@
 /**
  * Smoke test: call one real model through its adapter and the platform's resilience policy.
  *
- *   npm run llm:smoke -- groq:llama-3.1-8b-instant "Say hello in five words"
+ *   npm run llm:smoke -- groq:openai/gpt-oss-20b "Say hello in five words"
  *
  * Prints the response, token usage and per-attempt timings. Never prints API keys.
  */

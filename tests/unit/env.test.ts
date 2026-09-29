@@ -10,7 +10,7 @@ describe("parseEnv", () => {
     expect(env.JUDGE_MODEL).toBe("gemini:gemini-3.8-flash");
     expect(env.JUDGE_FALLBACK_MODELS).toEqual([
       "groq:openai/gpt-oss-120b",
-      "groq:llama-3.3-70b-versatile",
+      "openrouter:google/gemma-4-31b-it:free",
     ]);
     expect(env.OPENROUTER_FREE_ONLY).toBe(true);
     expect(env.GROQ_MODELS).toEqual([]);

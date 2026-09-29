@@ -16,7 +16,7 @@ const optionalString = z.preprocess(emptyToUndefined, z.string().trim().optional
 
 const optionalUrl = z.preprocess(emptyToUndefined, z.url().optional());
 
-/** Comma-separated list, e.g. `GROQ_MODELS=llama-3.3-70b-versatile,openai/gpt-oss-120b`. */
+/** Comma-separated list, e.g. `GROQ_MODELS=openai/gpt-oss-120b,qwen/qwen3.8-27b`. */
 const csvList = (defaultValue: string[] = []) =>
   z.preprocess(emptyToUndefined, z.string().optional()).transform((value) =>
     value === undefined
@@ -73,7 +73,10 @@ const EnvSchema = z.object({
 
   // LLM-as-a-judge.
   JUDGE_MODEL: z.preprocess(emptyToUndefined, z.string().default("gemini:gemini-3.8-flash")),
-  JUDGE_FALLBACK_MODELS: csvList(["groq:openai/gpt-oss-120b", "groq:llama-3.3-70b-versatile"]),
+  JUDGE_FALLBACK_MODELS: csvList([
+    "groq:openai/gpt-oss-120b",
+    "openrouter:google/gemma-4-31b-it:free",
+  ]),
   JUDGE_CONCURRENCY: integer(2, { min: 1, max: 16 }),
   /** Generous by default: thinking models spend part of the budget on reasoning tokens. */
   JUDGE_MAX_TOKENS: integer(3_000, { min: 256, max: 16_000 }),

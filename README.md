@@ -43,8 +43,8 @@ connection at a time, so also set `DATABASE_POOL_MAX=1`.
 ## Try it from the terminal
 
 ```bash
-npm run llm:smoke -- groq:llama-3.1-8b-instant "Say hello in five words"
-npm run eval -- "Explain how DNS works" groq:llama-3.3-70b-versatile gemini:gemini-3.8-flash
+npm run llm:smoke -- groq:openai/gpt-oss-20b "Say hello in five words"
+npm run eval -- "Explain how DNS works" groq:openai/gpt-oss-120b gemini:gemini-3.8-flash
 ```
 
 ## API

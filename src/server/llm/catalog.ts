@@ -37,13 +37,8 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     id: "groq",
     name: "Groq",
     isDemo: false,
+    // Verified against GET /openai/v1/models with a live key on 2026-09-29 (Llama models retired).
     models: [
-      {
-        modelId: "llama-3.3-70b-versatile",
-        displayName: "Llama 3.3 70B Versatile",
-        capabilities: ["general", "creative", "multilingual"],
-        contextWindow: 131_072,
-      },
       {
         modelId: "openai/gpt-oss-120b",
         displayName: "GPT-OSS 120B",
@@ -52,9 +47,15 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
         pricing: { inputPerMTok: 0.15, outputPerMTok: 0.6 },
       },
       {
-        modelId: "llama-3.1-8b-instant",
-        displayName: "Llama 3.1 8B Instant",
-        capabilities: ["general", "fast"],
+        modelId: "qwen/qwen3.8-27b",
+        displayName: "Qwen3.8 27B",
+        capabilities: ["general", "coding", "reasoning"],
+        contextWindow: 131_072,
+      },
+      {
+        modelId: "openai/gpt-oss-20b",
+        displayName: "GPT-OSS 20B",
+        capabilities: ["general", "reasoning", "fast"],
         contextWindow: 131_072,
       },
     ],
@@ -83,18 +84,26 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     name: "OpenRouter",
     isDemo: false,
     // Free models rotate frequently; the provider also discovers the live `:free` list.
+    // Curated order matters: the first model is pre-selected, so lead with the most reliable one.
     models: [
-      {
-        modelId: "qwen/qwen3.8-27b:free",
-        displayName: "Qwen3.8 27B (free)",
-        capabilities: ["general", "coding", "reasoning"],
-        contextWindow: 262_144,
-        pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-      },
       {
         modelId: "google/gemma-4-31b-it:free",
         displayName: "Gemma 4 31B (free)",
         capabilities: ["general", "creative", "multilingual"],
+        contextWindow: 262_144,
+        pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+      },
+      {
+        modelId: "nvidia/nemotron-3-super-120b-a12b:free",
+        displayName: "Nemotron 3 Super 120B (free)",
+        capabilities: ["general", "reasoning"],
+        contextWindow: 262_144,
+        pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+      },
+      {
+        modelId: "qwen/qwen3.8-27b:free",
+        displayName: "Qwen3.8 27B (free)",
+        capabilities: ["general", "coding", "reasoning"],
         contextWindow: 262_144,
         pricing: { inputPerMTok: 0, outputPerMTok: 0 },
       },

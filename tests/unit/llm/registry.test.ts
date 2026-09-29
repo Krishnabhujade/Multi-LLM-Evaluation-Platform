@@ -26,16 +26,16 @@ describe("createProviderRegistry", () => {
 
   it("applies env model overrides", async () => {
     const registry = createProviderRegistry(
-      envWith({ GROQ_API_KEY: "gsk_x", GROQ_MODELS: "llama-3.1-8b-instant,brand-new-model" }),
+      envWith({ GROQ_API_KEY: "gsk_x", GROQ_MODELS: "openai/gpt-oss-20b,brand-new-model" }),
     );
     const groqModels = (await registry.listModels()).filter((model) => model.providerId === "groq");
 
     expect(groqModels.map((model) => model.modelId)).toEqual([
-      "llama-3.1-8b-instant",
+      "openai/gpt-oss-20b",
       "brand-new-model",
     ]);
     // Known ids keep catalog metadata; unknown ids get generic metadata.
-    expect(groqModels[0]!.displayName).toBe("Llama 3.1 8B Instant");
+    expect(groqModels[0]!.displayName).toBe("GPT-OSS 20B");
     expect(groqModels[1]).toMatchObject({
       displayName: "brand-new-model",
       capabilities: ["general"],
@@ -64,7 +64,7 @@ describe("ProviderRegistry.resolve", () => {
 
   it.each([
     ["nope:model", "UNKNOWN_PROVIDER"],
-    ["groq:llama-3.3-70b-versatile", "NOT_CONFIGURED"],
+    ["groq:openai/gpt-oss-120b", "NOT_CONFIGURED"],
     ["demo:not-listed", "UNKNOWN_MODEL"],
   ])("rejects %s with %s", async (ref, reason) => {
     const error = await registry.resolve(ref).catch((caught: unknown) => caught);

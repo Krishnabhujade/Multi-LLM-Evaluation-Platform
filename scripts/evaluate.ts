@@ -2,7 +2,7 @@
  * Runs a complete evaluation from the terminal — the same pipeline the web app uses, persisted
  * to the database — and prints the ranking.
  *
- *   npm run eval -- "Explain how DNS works" groq:llama-3.3-70b-versatile gemini:gemini-3.8-flash
+ *   npm run eval -- "Explain how DNS works" groq:openai/gpt-oss-120b gemini:gemini-3.8-flash
  *   npm run eval -- "Explain how DNS works"          (defaults to the demo models)
  */
 import { CreateEvaluationSchema } from "@/lib/evaluation-request";
