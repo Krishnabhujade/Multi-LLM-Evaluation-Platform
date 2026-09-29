@@ -38,19 +38,21 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     name: "Groq",
     isDemo: false,
     // Verified against GET /openai/v1/models with a live key on 2026-09-29 (Llama models retired).
+    // The first model of each provider is pre-selected in the UI. GPT-OSS 120B is the default
+    // judge, so it is listed second to keep the judge from grading its own answer by default.
     models: [
+      {
+        modelId: "qwen/qwen3.8-27b",
+        displayName: "Qwen3.8 27B",
+        capabilities: ["general", "coding", "reasoning"],
+        contextWindow: 131_072,
+      },
       {
         modelId: "openai/gpt-oss-120b",
         displayName: "GPT-OSS 120B",
         capabilities: ["general", "reasoning", "coding", "math"],
         contextWindow: 131_072,
         pricing: { inputPerMTok: 0.15, outputPerMTok: 0.6 },
-      },
-      {
-        modelId: "qwen/qwen3.8-27b",
-        displayName: "Qwen3.8 27B",
-        capabilities: ["general", "coding", "reasoning"],
-        contextWindow: 131_072,
       },
       {
         modelId: "openai/gpt-oss-20b",
@@ -64,18 +66,19 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     id: "gemini",
     name: "Google Gemini",
     isDemo: false,
+    // Flash-Lite first: on the free tier 3.8 Flash is frequently overloaded (503s, ~25 s answers).
     models: [
-      {
-        modelId: "gemini-3.8-flash",
-        displayName: "Gemini 3.8 Flash",
-        capabilities: ["general", "reasoning", "coding", "math", "creative", "long-context"],
-        pricing: { inputPerMTok: 0.75, outputPerMTok: 3.75 },
-      },
       {
         modelId: "gemini-3.5-flash-lite",
         displayName: "Gemini 3.5 Flash-Lite",
         capabilities: ["general", "fast", "long-context"],
         pricing: { inputPerMTok: 0.3, outputPerMTok: 2.5 },
+      },
+      {
+        modelId: "gemini-3.8-flash",
+        displayName: "Gemini 3.8 Flash",
+        capabilities: ["general", "reasoning", "coding", "math", "creative", "long-context"],
+        pricing: { inputPerMTok: 0.75, outputPerMTok: 3.75 },
       },
     ],
   },
@@ -85,18 +88,25 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     isDemo: false,
     // Free models rotate frequently; the provider also discovers the live `:free` list.
     // Curated order matters: the first model is pre-selected, so lead with the most reliable one.
+    // Models served from a provider's shared free pool (Gemma, Qwen) are often rate-limited upstream.
     models: [
-      {
-        modelId: "google/gemma-4-31b-it:free",
-        displayName: "Gemma 4 31B (free)",
-        capabilities: ["general", "creative", "multilingual"],
-        contextWindow: 262_144,
-        pricing: { inputPerMTok: 0, outputPerMTok: 0 },
-      },
       {
         modelId: "nvidia/nemotron-3-super-120b-a12b:free",
         displayName: "Nemotron 3 Super 120B (free)",
         capabilities: ["general", "reasoning"],
+        contextWindow: 262_144,
+        pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+      },
+      {
+        modelId: "cohere/north-mini-code:free",
+        displayName: "Cohere North Mini Code (free)",
+        capabilities: ["general", "coding"],
+        pricing: { inputPerMTok: 0, outputPerMTok: 0 },
+      },
+      {
+        modelId: "google/gemma-4-31b-it:free",
+        displayName: "Gemma 4 31B (free)",
+        capabilities: ["general", "creative", "multilingual"],
         contextWindow: 262_144,
         pricing: { inputPerMTok: 0, outputPerMTok: 0 },
       },
@@ -113,16 +123,24 @@ export const PROVIDER_CATALOG: readonly ProviderCatalogEntry[] = [
     id: "huggingface",
     name: "Hugging Face",
     isDemo: false,
-    // Router suffix picks the serving provider (`:cheapest` stretches the free monthly credits);
+    // Router suffix picks the serving provider: `:fastest` (highest throughput) — `:cheapest` was
+    // measured at ~3× the latency on 2026-09-29 for a fraction of a cent in savings;
     // pricing and context window are filled in live from the router's /models endpoint.
+    // Llama first (pre-selected): non-reasoning and consistent; DeepSeek V4 Flash occasionally
+    // returns an empty answer depending on which host the router picks.
     models: [
       {
-        modelId: "deepseek-ai/DeepSeek-V4-Flash:cheapest",
+        modelId: "meta-llama/Llama-3.3-70B-Instruct:fastest",
+        displayName: "Llama 3.3 70B (HF)",
+        capabilities: ["general", "creative", "multilingual"],
+      },
+      {
+        modelId: "deepseek-ai/DeepSeek-V4-Flash:fastest",
         displayName: "DeepSeek V4 Flash (HF)",
         capabilities: ["general", "reasoning", "coding", "long-context"],
       },
       {
-        modelId: "Qwen/Qwen3-Coder-30B-A3B-Instruct:cheapest",
+        modelId: "Qwen/Qwen3-Coder-30B-A3B-Instruct:fastest",
         displayName: "Qwen3 Coder 30B (HF)",
         capabilities: ["coding", "general"],
       },

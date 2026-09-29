@@ -92,6 +92,18 @@ describe("withRetry", () => {
     ]);
   });
 
+  it("backs off for seconds on rate limits that give no Retry-After", async () => {
+    const { hooks, delays } = virtualTime();
+    const operation = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new LLMError("RATE_LIMITED", "429 upstream"))
+      .mockRejectedValueOnce(new LLMError("RATE_LIMITED", "429 upstream"))
+      .mockResolvedValueOnce("ok");
+
+    await withRetry(operation, { maxRetries: 2, rateLimitBaseDelayMs: 3_000 }, hooks);
+    expect(delays).toEqual([2_250, 4_500]); // equal jitter at random 0.5 on a 3 s base
+  });
+
   it("fails fast when the provider asks us to wait too long", async () => {
     const operation = vi
       .fn()

@@ -93,6 +93,19 @@ describe("extractProviderMessage", () => {
     expect(extractProviderMessage("Bad Gateway")).toBe("Bad Gateway");
     expect(extractProviderMessage("")).toBe("No error details returned");
   });
+
+  it("surfaces the upstream reason behind a gateway's generic message", () => {
+    const openRouter429 = JSON.stringify({
+      error: {
+        message: "Provider returned error",
+        code: 429,
+        metadata: { raw: "google/gemma-4-31b-it:free is temporarily rate-limited upstream." },
+      },
+    });
+    expect(extractProviderMessage(openRouter429)).toBe(
+      "google/gemma-4-31b-it:free is temporarily rate-limited upstream.",
+    );
+  });
 });
 
 describe("toLLMError", () => {

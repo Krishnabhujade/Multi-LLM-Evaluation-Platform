@@ -49,6 +49,11 @@ export interface RetryPolicy {
   /** Additional attempts after the first one. */
   maxRetries: number;
   baseDelayMs?: number;
+  /**
+   * Base delay for rate limits that come without a Retry-After hint. Rate limits clear on a
+   * scale of seconds, so sub-second retries would just burn attempts.
+   */
+  rateLimitBaseDelayMs?: number;
   maxDelayMs?: number;
   /** A provider asking us to wait longer than this is treated as a hard failure. */
   maxRetryAfterMs?: number;
@@ -78,6 +83,7 @@ export async function withRetry<T>(
   const {
     maxRetries,
     baseDelayMs = 500,
+    rateLimitBaseDelayMs = 3_000,
     maxDelayMs = 8_000,
     maxRetryAfterMs = 20_000,
     deadline,
@@ -102,8 +108,8 @@ export async function withRetry<T>(
       });
 
       if (!error.retryable || attempt > maxRetries || signal?.aborted) throw error;
-      const delay =
-        error.retryAfterMs ?? backoffDelay(attempt, baseDelayMs, maxDelayMs, hooks.random);
+      const base = error.code === "RATE_LIMITED" ? rateLimitBaseDelayMs : baseDelayMs;
+      const delay = error.retryAfterMs ?? backoffDelay(attempt, base, maxDelayMs, hooks.random);
       if (delay > maxRetryAfterMs) throw error;
       if (deadline !== undefined && now() + delay >= deadline) throw error;
 

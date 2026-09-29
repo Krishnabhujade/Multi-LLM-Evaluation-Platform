@@ -7,10 +7,10 @@ describe("parseEnv", () => {
 
     expect(env.MODEL_TIMEOUT_MS).toBe(45_000);
     expect(env.MODEL_MAX_RETRIES).toBe(2);
-    expect(env.JUDGE_MODEL).toBe("gemini:gemini-3.8-flash");
+    expect(env.JUDGE_MODEL).toBe("groq:openai/gpt-oss-120b");
     expect(env.JUDGE_FALLBACK_MODELS).toEqual([
-      "groq:openai/gpt-oss-120b",
-      "openrouter:google/gemma-4-31b-it:free",
+      "gemini:gemini-3.8-flash",
+      "groq:openai/gpt-oss-20b",
     ]);
     expect(env.OPENROUTER_FREE_ONLY).toBe(true);
     expect(env.GROQ_MODELS).toEqual([]);
@@ -20,7 +20,7 @@ describe("parseEnv", () => {
     const env = parseEnv({ GROQ_API_KEY: "", JUDGE_MODEL: "  ", MODEL_TIMEOUT_MS: "" });
 
     expect(env.GROQ_API_KEY).toBeUndefined();
-    expect(env.JUDGE_MODEL).toBe("gemini:gemini-3.8-flash");
+    expect(env.JUDGE_MODEL).toBe("groq:openai/gpt-oss-120b");
     expect(env.MODEL_TIMEOUT_MS).toBe(45_000);
   });
 

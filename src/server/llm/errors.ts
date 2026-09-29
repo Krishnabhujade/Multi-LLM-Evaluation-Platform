@@ -77,6 +77,17 @@ function parseDurationMs(value: string): number | undefined {
 export function extractProviderMessage(body: string): string {
   try {
     const parsed: unknown = JSON.parse(body);
+    // Gateways (OpenRouter) wrap upstream failures in a generic message and put the real
+    // reason — e.g. "…is temporarily rate-limited upstream" — in error.metadata.raw.
+    const generic = getPath(parsed, ["error", "message"]);
+    const upstream = getPath(parsed, ["error", "metadata", "raw"]);
+    if (
+      typeof upstream === "string" &&
+      upstream.trim() &&
+      (typeof generic !== "string" || /^provider returned error$/i.test(generic.trim()))
+    ) {
+      return upstream;
+    }
     const candidates = [
       getPath(parsed, ["error", "message"]),
       getPath(parsed, ["error", "metadata", "raw"]),
