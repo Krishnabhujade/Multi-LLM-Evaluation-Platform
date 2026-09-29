@@ -9,14 +9,17 @@ import {
   defaultCriteria,
   type CriterionState,
 } from "@/components/evaluation/criteria-editor";
-import {
-  ModelPicker,
-  isCandidateModel,
-  type ProviderOption,
-} from "@/components/evaluation/model-picker";
+import { ModelPicker, type ProviderOption } from "@/components/evaluation/model-picker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardAction,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Label } from "@/components/ui/label";
 import {
@@ -30,12 +33,18 @@ import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import type { ModelListItem } from "@/lib/api-types";
-import { CATEGORY_LABELS, TASK_CATEGORIES, type TaskCategory } from "@/lib/categories";
+import {
+  CATEGORY_CAPABILITIES,
+  CATEGORY_LABELS,
+  TASK_CATEGORIES,
+  type TaskCategory,
+} from "@/lib/categories";
 import {
   CreateEvaluationSchema,
   MAX_MODELS_PER_RUN,
   type CreateEvaluationInput,
 } from "@/lib/evaluation-request";
+import { isCandidateModel, selectModelsForCategory } from "@/lib/models";
 import { cn } from "@/lib/utils";
 
 const EXAMPLES: Array<{ label: string; prompt: string; category: TaskCategory }> = [
@@ -87,16 +96,20 @@ export function EvaluationForm({
   models,
   providers,
   defaultJudgeRef,
+  unreliableRefs = [],
 }: {
   models: ModelListItem[];
   providers: ProviderOption[];
   defaultJudgeRef: string | null;
+  /** Models failing often in the last 24 h; auto-select avoids them. */
+  unreliableRefs?: string[];
 }) {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [category, setCategory] = useState<TaskCategory>("GENERAL_QA");
   const [selected, setSelected] = useState<string[]>(() => defaultSelection(models));
+  const [autoSelect, setAutoSelect] = useState(false);
   const [criteria, setCriteria] = useState<CriterionState[]>(defaultCriteria);
   const [blind, setBlind] = useState(true);
   const [judgeRef, setJudgeRef] = useState(defaultJudgeRef ?? "");
@@ -106,7 +119,20 @@ export function EvaluationForm({
   const [errors, setErrors] = useState<FieldErrors>({});
 
   const judgeOptions = useMemo(() => models.filter((model) => model.available), [models]);
-  const judgeIsCandidate = judgeRef !== "" && selected.includes(judgeRef);
+  // Same pure router the server runs, so the preview matches what will be evaluated.
+  const autoPicked = useMemo(
+    () =>
+      selectModelsForCategory(category, models, {
+        judgeRef: judgeRef || null,
+        avoid: unreliableRefs,
+      }),
+    [category, models, judgeRef, unreliableRefs],
+  );
+  const skippedUnreliable = models.filter(
+    (model) => model.available && unreliableRefs.includes(model.ref),
+  );
+  const effectiveModels = autoSelect ? autoPicked.map((model) => model.ref) : selected;
+  const judgeIsCandidate = judgeRef !== "" && effectiveModels.includes(judgeRef);
   const judgeName = judgeOptions.find((model) => model.ref === judgeRef)?.displayName;
   const enabledCriteria = criteria.filter((criterion) => criterion.enabled).length;
 
@@ -118,7 +144,8 @@ export function EvaluationForm({
       prompt,
       systemPrompt: systemPrompt.trim() || undefined,
       category,
-      models: selected,
+      models: autoSelect ? [] : selected,
+      autoSelect,
       temperature,
       maxTokens,
       mode: "STANDARD",
@@ -253,16 +280,85 @@ export function EvaluationForm({
           <CardHeader>
             <CardTitle>Models</CardTitle>
             <CardDescription>Selected models are called in parallel.</CardDescription>
+            <CardAction className="flex items-center gap-2">
+              <Label htmlFor="auto-select" className="text-sm font-normal text-muted-foreground">
+                Auto-select
+              </Label>
+              <Switch id="auto-select" checked={autoSelect} onCheckedChange={setAutoSelect} />
+            </CardAction>
           </CardHeader>
           <CardContent>
-            <ModelPicker
-              models={models}
-              providers={providers}
-              selected={selected}
-              onChange={setSelected}
-              max={MAX_MODELS_PER_RUN}
-              error={errors.models}
-            />
+            {autoSelect ? (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Picked for{" "}
+                  <span className="font-medium text-foreground">{CATEGORY_LABELS[category]}</span>{" "}
+                  from the capability tags of available models (
+                  {CATEGORY_CAPABILITIES[category].join(", ")}), one per provider where possible.
+                  The judge is left out so it never grades itself.
+                </p>
+                {skippedUnreliable.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    Skipped for failing often in the last 24 h:{" "}
+                    {skippedUnreliable.map((model) => model.displayName).join(", ")}.
+                  </p>
+                )}
+                {autoPicked.length > 0 ? (
+                  <ul className="divide-y rounded-lg border">
+                    {autoPicked.map((model) => (
+                      <li
+                        key={model.ref}
+                        className="flex items-center justify-between gap-3 px-3 py-2"
+                      >
+                        <span className="min-w-0">
+                          <span className="block truncate text-sm font-medium">
+                            {model.displayName}
+                          </span>
+                          <span className="block truncate text-xs text-muted-foreground">
+                            {model.providerName}
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 flex-wrap justify-end gap-1">
+                          {model.capabilities
+                            .filter((capability) =>
+                              CATEGORY_CAPABILITIES[category].includes(capability),
+                            )
+                            .map((capability) => (
+                              <Badge key={capability} variant="secondary" className="font-normal">
+                                {capability}
+                              </Badge>
+                            ))}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-sm text-destructive">
+                    No models are available to auto-select.
+                  </p>
+                )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setSelected(autoPicked.map((model) => model.ref));
+                    setAutoSelect(false);
+                  }}
+                >
+                  Customize this selection
+                </Button>
+              </div>
+            ) : (
+              <ModelPicker
+                models={models}
+                providers={providers}
+                selected={selected}
+                onChange={setSelected}
+                max={MAX_MODELS_PER_RUN}
+                error={errors.models}
+              />
+            )}
           </CardContent>
         </Card>
       </div>
@@ -425,7 +521,8 @@ export function EvaluationForm({
               </span>
             ) : (
               <>
-                <span className="font-medium text-foreground">{selected.length}</span> models ·{" "}
+                <span className="font-medium text-foreground">{effectiveModels.length}</span>{" "}
+                {autoSelect ? "auto-selected " : ""}models ·{" "}
                 <span className="font-medium text-foreground">{enabledCriteria}</span> criteria ·
                 judged by <span className="font-medium text-foreground">{judgeName ?? "—"}</span>
                 {blind ? " (blind)" : ""}

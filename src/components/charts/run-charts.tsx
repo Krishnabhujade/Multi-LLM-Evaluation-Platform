@@ -8,7 +8,7 @@ import { ModelName } from "@/components/shared/model-name";
 import { ResponseStatusLabel } from "@/components/shared/response-status";
 import type { RunDetail } from "@/lib/api-types";
 import { buildLatencyBars, buildOverallBars, buildTokenBars } from "@/lib/chart-data";
-import { formatLatency, formatScore } from "@/lib/format";
+import { formatLatency } from "@/lib/format";
 
 /** The Charts tab: scores, latency and token usage. The comparison table is the table view. */
 export function RunCharts({ run }: { run: RunDetail }) {
@@ -23,14 +23,7 @@ export function RunCharts({ run }: { run: RunDetail }) {
 
       <ChartCard title="Overall score" description="Weighted score out of 10, best first.">
         {overall.length > 0 ? (
-          <ValueBars
-            bars={overall}
-            domain={[0, 10]}
-            ticks={[0, 2, 4, 6, 8, 10]}
-            tickFormat={(value) => String(value)}
-            format={(value) => formatScore(value)}
-            valueLabel="/ 10"
-          />
+          <ValueBars bars={overall} unit="score" />
         ) : (
           <p className="text-sm text-muted-foreground">No response was scored.</p>
         )}
@@ -40,13 +33,7 @@ export function RunCharts({ run }: { run: RunDetail }) {
         title="Latency"
         description="Wall-clock time per model, including retries. Fastest first."
       >
-        {latency.bars.length > 0 && (
-          <ValueBars
-            bars={latency.bars}
-            format={(value) => formatLatency(value)}
-            valueLabel="latency"
-          />
-        )}
+        {latency.bars.length > 0 && <ValueBars bars={latency.bars} unit="latency" />}
         {latency.failed.length > 0 && (
           <ul className="mt-4 space-y-1.5 border-t pt-3">
             {latency.failed.map((entry) => (

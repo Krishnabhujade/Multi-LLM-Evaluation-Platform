@@ -1,7 +1,9 @@
 import "server-only";
 import type { RunDetail } from "@/lib/api-types";
 import type { CreateEvaluationRequest } from "@/lib/evaluation-request";
+import { selectModelsForCategory } from "@/lib/models";
 import { PrismaEvaluationRepository } from "@/server/db/evaluation-repository";
+import { getUnreliableModelRefs } from "@/server/db/model-health";
 import { getPrisma } from "@/server/db/prisma";
 import { getEnv, type Env } from "@/server/env";
 import { resolveCriteria } from "@/server/evaluation/criteria";
@@ -79,9 +81,20 @@ export async function createEvaluation(
     throw new ApiError(400, "MODE_NOT_SUPPORTED", "Pairwise evaluation is not available yet.");
   }
 
-  // Throws ModelUnavailableError (HTTP 422) for unknown or unconfigured models.
-  const candidates = await Promise.all(input.models.map((ref) => registry.resolve(ref)));
   const judge = await resolveJudge(registry, env, input.judgeModel);
+  const modelRefs = input.autoSelect
+    ? selectModelsForCategory(input.category, await registry.listModels(), {
+        judgeRef: judge.model.ref,
+        // Health data improves the pick but must never block a run.
+        avoid: await getUnreliableModelRefs(getPrisma()).catch(() => []),
+      }).map((model) => model.ref)
+    : input.models;
+  if (modelRefs.length === 0) {
+    throw new ApiError(422, "NO_MODELS_AVAILABLE", "No models are available to auto-select.");
+  }
+
+  // Throws ModelUnavailableError (HTTP 422) for unknown or unconfigured models.
+  const candidates = await Promise.all(modelRefs.map((ref) => registry.resolve(ref)));
   const criteria = resolveCriteria(input.criteria);
 
   const [modelDbIds, judgeModelDbId] = await Promise.all([
@@ -105,6 +118,7 @@ export async function createEvaluation(
     mode: input.mode,
     blind: input.blind,
     category: input.category,
+    autoSelected: input.autoSelect,
     criteria,
     judgeModelDbId,
     shuffleSeed,
@@ -122,7 +136,8 @@ export async function createEvaluation(
   logger.info("Evaluation created", {
     runId: id,
     requestId: meta.requestId,
-    models: input.models,
+    models: modelRefs,
+    autoSelected: input.autoSelect,
     judge: judge.model.ref,
   });
   return { id };

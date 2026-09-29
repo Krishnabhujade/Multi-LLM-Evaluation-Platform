@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import type { ModelListItem } from "@/lib/api-types";
 import { formatContextWindow, formatPricePerMTok } from "@/lib/format";
+import { isCandidateModel } from "@/lib/models";
 import { PROVIDER_KEY_ENV } from "@/lib/providers";
 import { cn } from "@/lib/utils";
 
@@ -16,10 +17,6 @@ export interface ProviderOption {
   configured: boolean;
   isDemo: boolean;
 }
-
-/** Demo judge models only make sense as judges, never as candidates. */
-export const isCandidateModel = (model: ModelListItem) =>
-  !(model.isDemo && model.modelId.endsWith("-judge"));
 
 export function ModelPicker({
   models,

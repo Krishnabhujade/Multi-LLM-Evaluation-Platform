@@ -35,7 +35,9 @@ export const CreateEvaluationSchema = z
       .optional()
       .transform((value) => value || undefined),
     category: z.enum(TASK_CATEGORIES).default("GENERAL_QA"),
-    models: z.array(ModelRefSchema).min(1, "Select at least one model").max(MAX_MODELS_PER_RUN),
+    models: z.array(ModelRefSchema).max(MAX_MODELS_PER_RUN).default([]),
+    /** Let the router pick models for the task category (then `models` may be empty). */
+    autoSelect: z.boolean().default(false),
     temperature: z.number().min(0).max(2).default(0.7),
     maxTokens: z.number().int().min(64).max(8_192).default(1_024),
     mode: z.enum(["STANDARD", "PAIRWISE"]).default("STANDARD"),
@@ -44,6 +46,13 @@ export const CreateEvaluationSchema = z
     judgeModel: ModelRefSchema.optional(),
   })
   .superRefine((value, ctx) => {
+    if (!value.autoSelect && value.models.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["models"],
+        message: "Select at least one model or turn on auto-select",
+      });
+    }
     if (new Set(value.models).size !== value.models.length) {
       ctx.addIssue({
         code: "custom",

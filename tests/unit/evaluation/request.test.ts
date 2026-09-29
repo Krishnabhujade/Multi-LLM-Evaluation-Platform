@@ -52,6 +52,14 @@ describe("CreateEvaluationSchema", () => {
     expect(result.error!.issues.some((issue) => issue.path[0] === field)).toBe(true);
   });
 
+  it("allows an empty model list only with auto-select", () => {
+    expect(CreateEvaluationSchema.parse({ prompt: "Hi", autoSelect: true })).toMatchObject({
+      models: [],
+      autoSelect: true,
+    });
+    expect(CreateEvaluationSchema.safeParse({ prompt: "Hi" }).success).toBe(false);
+  });
+
   it("accepts built-ins by key and custom criteria with a description", () => {
     const parsed = CreateEvaluationSchema.parse({
       ...base,

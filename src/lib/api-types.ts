@@ -103,6 +103,53 @@ export interface RunDetail {
   calls: LlmCallDetail[];
 }
 
+/** A history row: enough to scan past evaluations without loading every answer. */
+export interface RunSummary {
+  id: string;
+  status: RunStatus;
+  mode: EvaluationMode;
+  category: TaskCategory;
+  /** First ~200 characters of the prompt. */
+  prompt: string;
+  createdAt: string;
+  durationMs: number | null;
+  autoSelected: boolean;
+  models: Array<
+    Pick<ModelSummary, "displayName" | "providerName" | "isDemo"> & { failed: boolean }
+  >;
+  winner: { displayName: string; overallScore: number | null } | null;
+}
+
+export interface RunListPage {
+  items: RunSummary[];
+  nextCursor: string | null;
+}
+
+export interface LeaderboardEntry {
+  model: ModelSummary;
+  /** Responses the model produced in scope (successful or failed). */
+  responses: number;
+  /** Responses that received a score. */
+  scored: number;
+  failures: number;
+  wins: number;
+  winRate: number | null;
+  failureRate: number | null;
+  avgOverall: number | null;
+  avgLatencyMs: number | null;
+  /** Average score per criterion key. */
+  criteria: Record<string, number>;
+  /** Fewer than MIN_LEADERBOARD_SAMPLE scored responses. */
+  lowSample: boolean;
+}
+
+export interface Leaderboard {
+  entries: LeaderboardEntry[];
+  /** Criterion keys that have data in scope (built-ins first). */
+  criterionKeys: Array<{ key: string; name: string }>;
+  totalRuns: number;
+}
+
 export interface ModelListItem extends ModelSummary {
   capabilities: Capability[];
   contextWindow?: number;

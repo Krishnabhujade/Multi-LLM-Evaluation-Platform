@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, CheckCircle2, EyeOff, Eye, Loader2, XCircle } from "lucide-react";
+import { ArrowLeft, CheckCircle2, EyeOff, Eye, Loader2, Sparkles, XCircle } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 import { DemoBadge } from "@/components/shared/model-name";
@@ -81,7 +81,10 @@ export function RunHeader({ run }: { run: RunDetail }) {
           {run.blind ? <EyeOff aria-hidden /> : <Eye aria-hidden />}
           {run.blind ? "Blind judging" : "Identity visible to judge"}
         </Badge>
-        <Badge variant="secondary">{run.responses.length} models</Badge>
+        <Badge variant="secondary">
+          {run.autoSelected && <Sparkles aria-hidden />}
+          {run.responses.length} {run.autoSelected ? "auto-selected models" : "models"}
+        </Badge>
         <span className="inline-flex items-center gap-1.5 text-muted-foreground">
           Judge: <span className="font-medium text-foreground">{run.judgeModel.displayName}</span>
           {run.judgeModel.isDemo && <DemoBadge />}

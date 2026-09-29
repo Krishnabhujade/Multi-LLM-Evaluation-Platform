@@ -9,9 +9,31 @@ import {
   type ChartConfig,
 } from "@/components/ui/chart";
 import type { ValueBar } from "@/lib/chart-data";
+import { formatLatency, formatScore } from "@/lib/format";
 
 const BAR_SIZE = 20; // ≤ 24px: marks never fill their band
 const ROW_HEIGHT = 36;
+
+/**
+ * Axis and label conventions per unit. Chosen by name (not passed as functions) so server
+ * components can render these charts — functions cannot cross the RSC boundary.
+ */
+const UNITS = {
+  score: {
+    domain: [0, 10] as [number, number],
+    ticks: [0, 2, 4, 6, 8, 10],
+    format: (value: number) => formatScore(value),
+    tickFormat: (value: number) => String(value),
+    valueLabel: "/ 10",
+  },
+  latency: {
+    domain: [0, "auto"] as [number, "auto"],
+    ticks: undefined,
+    format: (value: number) => formatLatency(value),
+    tickFormat: (value: number) => formatLatency(value),
+    valueLabel: "latency",
+  },
+} as const;
 
 /**
  * Horizontal bars, one per model, in each model's series color. Model names on the axis carry
@@ -19,22 +41,15 @@ const ROW_HEIGHT = 36;
  */
 export function ValueBars({
   bars,
-  domain,
-  ticks,
-  format,
-  tickFormat = format,
-  valueLabel,
+  unit,
+  color,
 }: {
   bars: ValueBar[];
-  domain?: [number, number];
-  /** Explicit, clean tick values (e.g. 0, 2, 4 … 10). */
-  ticks?: number[];
-  /** Value format at the bar tips and in tooltips. */
-  format: (value: number) => string;
-  /** Axis tick format; defaults to `format`. */
-  tickFormat?: (value: number) => string;
-  valueLabel: string;
+  unit: keyof typeof UNITS;
+  /** One color for every bar (a single series); by default each bar uses its model's color. */
+  color?: string;
 }) {
+  const { domain, ticks, format, tickFormat, valueLabel } = UNITS[unit];
   const config = { value: { label: valueLabel } } satisfies ChartConfig;
   const height = Math.max(ROW_HEIGHT * bars.length + 32, 96);
 
@@ -49,8 +64,8 @@ export function ValueBars({
         <CartesianGrid horizontal={false} stroke="var(--border)" />
         <XAxis
           type="number"
-          domain={domain ?? [0, "auto"]}
-          ticks={ticks}
+          domain={domain}
+          ticks={ticks ? [...ticks] : undefined}
           tickFormatter={tickFormat}
           tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
           axisLine={false}
@@ -80,7 +95,7 @@ export function ValueBars({
         />
         <Bar dataKey="value" barSize={BAR_SIZE} radius={[0, 4, 4, 0]} isAnimationActive>
           {bars.map((bar) => (
-            <Cell key={bar.id} fill={seriesColor(bar.seriesIndex)} />
+            <Cell key={bar.id} fill={color ?? seriesColor(bar.seriesIndex)} />
           ))}
           <LabelList
             dataKey="value"
