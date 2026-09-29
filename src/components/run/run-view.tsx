@@ -1,6 +1,8 @@
 "use client";
 
 import { AlertTriangle, FlaskConical, Scale } from "lucide-react";
+import { RunCharts } from "@/components/charts/run-charts";
+import { TraceWaterfall } from "@/components/charts/trace-waterfall";
 import { ComparisonTable } from "@/components/run/comparison-table";
 import { ResponseCard } from "@/components/run/response-card";
 import { RunDetails } from "@/components/run/run-details";
@@ -130,9 +132,11 @@ export function RunView({ initialRun }: { initialRun: RunDetail }) {
           )}
 
           <Tabs defaultValue="comparison">
-            <TabsList>
+            <TabsList className="max-w-full overflow-x-auto">
               <TabsTrigger value="comparison">Comparison</TabsTrigger>
+              <TabsTrigger value="charts">Charts</TabsTrigger>
               <TabsTrigger value="responses">All responses</TabsTrigger>
+              <TabsTrigger value="trace">Trace</TabsTrigger>
               <TabsTrigger value="details">Details</TabsTrigger>
             </TabsList>
             <TabsContent value="comparison" className="pt-4">
@@ -153,6 +157,12 @@ export function RunView({ initialRun }: { initialRun: RunDetail }) {
                   isWinner={response.id === run.winnerResponseId}
                 />
               ))}
+            </TabsContent>
+            <TabsContent value="charts" className="pt-4">
+              <RunCharts run={run} />
+            </TabsContent>
+            <TabsContent value="trace" className="pt-4">
+              <TraceWaterfall run={run} />
             </TabsContent>
             <TabsContent value="details" className="pt-4">
               <RunDetails run={run} />
