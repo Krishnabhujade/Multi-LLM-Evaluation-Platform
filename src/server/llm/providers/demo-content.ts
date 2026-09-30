@@ -71,7 +71,8 @@ export function balancedAnswer(prompt: string): string {
 
 /**
  * The synthetic judge reads the same prompt the real judge gets: criterion keys come from the
- * JSON template (`"<key>": { "reasoning": ... }`) and the candidate from `<candidate_response>`.
+ * JSON template (`"<key>": { "reasoning": ... }`) and the candidate from `<candidate_response>`
+ * (or, for pairwise prompts, the two responses from `<response_a>` and `<response_b>`).
  * Scores are simple length/structure heuristics — clearly labelled as not a real judgement.
  */
 export function syntheticJudgement(messages: ChatMessage[]): string {
@@ -79,33 +80,23 @@ export function syntheticJudgement(messages: ChatMessage[]): string {
   const keys = [
     ...new Set([...text.matchAll(/"([a-z][a-z0-9_]*)"\s*:\s*\{\s*"reasoning"/g)].map((m) => m[1]!)),
   ];
-  // The fenced candidate lives in the user message (the system prompt only mentions the tag).
+  // Fenced responses live in the user message (the system prompt only mentions the tags).
+  const user = lastUserMessage(messages);
+  const first = /<response_a>\n?([\s\S]*?)\n?<\/response_a>/.exec(user)?.[1];
+  const second = /<response_b>\n?([\s\S]*?)\n?<\/response_b>/.exec(user)?.[1];
+  if (first !== undefined && second !== undefined) return syntheticPairwise(keys, first, second);
+
   const candidate =
-    /<candidate_response>\n?([\s\S]*?)\n?<\/candidate_response>/.exec(
-      lastUserMessage(messages),
-    )?.[1] ?? "";
-  const words = candidate.split(/\s+/).filter(Boolean).length;
-  const structured = /(^|\n)\s*(#{1,3} |[-*] |\d+\. )/.test(candidate);
-
-  const heuristics: Record<string, number> = {
-    conciseness: words < 150 ? 9 : words < 350 ? 7 : 5,
-    completeness: words < 60 ? 6 : words < 350 ? 8 : 8.5,
-    clarity: structured ? 8.5 : 7,
-  };
-
+    /<candidate_response>\n?([\s\S]*?)\n?<\/candidate_response>/.exec(user)?.[1] ?? "";
+  const { words, structured } = describe(candidate);
   const criteria = Object.fromEntries(
-    keys.map((key) => {
-      const jitter = hashToUnit(`${key}:${candidate}`) * 2 - 1; // [-1, 1)
-      const base = heuristics[key] ?? 7.5;
-      const score = Math.min(10, Math.max(0, Math.round((base + jitter) * 2) / 2));
-      return [
-        key,
-        {
-          reasoning: `Synthetic demo score for ${key.replaceAll("_", " ")} based on length (${words} words) and structure — not a real evaluation.`,
-          score,
-        },
-      ];
-    }),
+    keys.map((key) => [
+      key,
+      {
+        reasoning: `Synthetic demo score for ${key.replaceAll("_", " ")} based on length (${words} words) and structure — not a real evaluation.`,
+        score: heuristicScore(key, candidate),
+      },
+    ]),
   );
 
   return JSON.stringify({
@@ -114,5 +105,46 @@ export function syntheticJudgement(messages: ChatMessage[]): string {
       "Synthetic demo evaluation: heuristic scores for local development, not a real judgement.",
     strengths: structured ? ["Uses visible structure"] : ["Direct"],
     weaknesses: words > 350 ? ["Long for the request"] : ["Generic content"],
+  });
+}
+
+function describe(content: string) {
+  return {
+    words: content.split(/\s+/).filter(Boolean).length,
+    structured: /(^|\n)\s*(#{1,3} |[-*] |\d+\. )/.test(content),
+  };
+}
+
+/** Length/structure heuristic with a stable per-content jitter; independent of position. */
+function heuristicScore(key: string, content: string): number {
+  const { words, structured } = describe(content);
+  const heuristics: Record<string, number> = {
+    conciseness: words < 150 ? 9 : words < 350 ? 7 : 5,
+    completeness: words < 60 ? 6 : words < 350 ? 8 : 8.5,
+    clarity: structured ? 8.5 : 7,
+  };
+  const jitter = hashToUnit(`${key}:${content}`) * 2 - 1; // [-1, 1)
+  const base = heuristics[key] ?? 7.5;
+  return Math.min(10, Math.max(0, Math.round((base + jitter) * 2) / 2));
+}
+
+/** Pairwise demo verdict: the higher heuristic score wins a criterion; within 0.5 is a tie. */
+function syntheticPairwise(keys: string[], first: string, second: string): string {
+  const criteria = Object.fromEntries(
+    keys.map((key) => {
+      const difference = heuristicScore(key, first) - heuristicScore(key, second);
+      const winner = Math.abs(difference) < 0.5 ? "TIE" : difference > 0 ? "A" : "B";
+      return [
+        key,
+        {
+          reasoning: `Synthetic demo comparison for ${key.replaceAll("_", " ")} based on length and structure — not a real evaluation.`,
+          winner,
+        },
+      ];
+    }),
+  );
+  return JSON.stringify({
+    criteria,
+    summary: "Synthetic demo comparison of Response A and Response B, not a real judgement.",
   });
 }

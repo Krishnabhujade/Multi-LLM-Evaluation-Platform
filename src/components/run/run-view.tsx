@@ -9,6 +9,7 @@ import { RunDetails } from "@/components/run/run-details";
 import { RunHeader } from "@/components/run/run-header";
 import { RunProgress } from "@/components/run/run-progress";
 import { useRunStream } from "@/components/run/use-run-stream";
+import { WinMatrix } from "@/components/run/win-matrix";
 import { WinnerCard } from "@/components/run/winner-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -132,8 +133,12 @@ export function RunView({ initialRun }: { initialRun: RunDetail }) {
           )}
 
           <Tabs defaultValue="comparison">
-            <TabsList className="max-w-full overflow-x-auto">
+            {/* Start-aligned: a centered list that overflows would clip its first tab. */}
+            <TabsList className="max-w-full justify-start overflow-x-auto">
               <TabsTrigger value="comparison">Comparison</TabsTrigger>
+              {run.mode === "PAIRWISE" && (
+                <TabsTrigger value="head-to-head">Head-to-head</TabsTrigger>
+              )}
               <TabsTrigger value="charts">Charts</TabsTrigger>
               <TabsTrigger value="responses">All responses</TabsTrigger>
               <TabsTrigger value="trace">Trace</TabsTrigger>
@@ -147,6 +152,11 @@ export function RunView({ initialRun }: { initialRun: RunDetail }) {
                 seriesIndex={seriesIndex}
               />
             </TabsContent>
+            {run.mode === "PAIRWISE" && (
+              <TabsContent value="head-to-head" className="pt-4">
+                <WinMatrix run={run} />
+              </TabsContent>
+            )}
             <TabsContent value="responses" className="space-y-4 pt-4">
               {ordered.map((response) => (
                 <ResponseCard

@@ -1,7 +1,7 @@
 "use client";
 
 import { AlertTriangle, CheckCircle2, Circle, Loader2 } from "lucide-react";
-import type { LiveModelState, RunPhase } from "@/components/run/use-run-stream";
+import type { JudgingProgress, LiveModelState, RunPhase } from "@/components/run/use-run-stream";
 import { ModelName } from "@/components/shared/model-name";
 import { errorLabel } from "@/components/shared/response-status";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,6 +18,23 @@ function stepState(phase: RunPhase, step: RunPhase): StepState {
   const index = ORDER.indexOf(step);
   if (current > index) return "done";
   return current === index ? "active" : "upcoming";
+}
+
+/** Model calls and judging overlap: each response is judged as soon as it arrives. */
+function overlappingStates(
+  phase: RunPhase,
+  modelsDone: boolean,
+  judgingStarted: boolean,
+): { calling: StepState; judging: StepState } {
+  const past = (step: RunPhase) => stepState(phase, step) === "done";
+  const calling: StepState =
+    phase === "queued" ? "upcoming" : modelsDone || past("calling") ? "done" : "active";
+  const judging: StepState = past("judging")
+    ? "done"
+    : judgingStarted || phase === "judging"
+      ? "active"
+      : "upcoming";
+  return { calling, judging };
 }
 
 function StepIcon({ state }: { state: StepState }) {
@@ -62,19 +79,31 @@ export function RunProgress({
   run: RunDetail;
   phase: RunPhase;
   live: Record<string, LiveModelState>;
-  judging: { completed: number; total: number } | null;
+  judging: JudgingProgress | null;
   seriesIndex: Map<string, number>;
 }) {
   const finishedModels = run.responses.filter((response) => {
     const status = live[response.id]?.status;
     return status === "succeeded" || status === "failed";
   }).length;
+  const states = overlappingStates(
+    phase,
+    run.responses.length > 0 && finishedModels === run.responses.length,
+    judging !== null,
+  );
+  // Without live events (a followed run) progress is inferred per response; pairwise
+  // comparisons are only counted from the event stream.
+  const comparing = judging?.unit === "comparison";
   const judgedCount =
     judging?.completed ??
     Object.values(live).filter((state) => state.judge === "scored" || state.judge === "failed")
       .length;
   const judgeTotal =
     judging?.total ?? Object.values(live).filter((state) => state.status === "succeeded").length;
+  const judgingTitle =
+    run.mode === "PAIRWISE"
+      ? `Comparing responses head-to-head with ${run.judgeModel.displayName}`
+      : `Evaluating responses with ${run.judgeModel.displayName}`;
 
   return (
     <Card>
@@ -85,7 +114,7 @@ export function RunProgress({
         >
           <Step state={stepState(phase, "queued")} title="Preparing evaluation" />
           <Step
-            state={stepState(phase, "calling")}
+            state={states.calling}
             title={`Calling ${run.responses.length} models in parallel · ${finishedModels}/${run.responses.length}`}
           >
             <ul className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
@@ -121,6 +150,7 @@ export function RunProgress({
                           ? formatLatency(state.latencyMs)
                           : ""}
                       {state?.attempts && state.attempts > 1 ? ` · ${state.attempts} tries` : ""}
+                      {state?.judge === "scored" ? " · judged" : ""}
                     </span>
                   </li>
                 );
@@ -128,13 +158,19 @@ export function RunProgress({
             </ul>
           </Step>
           <Step
-            state={stepState(phase, "judging")}
+            state={states.judging}
             title={
               judgeTotal > 0
-                ? `Evaluating responses with ${run.judgeModel.displayName} · ${judgedCount}/${judgeTotal}`
-                : `Evaluating responses with ${run.judgeModel.displayName}`
+                ? `${judgingTitle} · ${judgedCount}/${judgeTotal}${comparing ? " pairs" : ""}`
+                : judgingTitle
             }
-          />
+          >
+            {run.mode === "PAIRWISE" && (
+              <p className="mt-1 text-xs text-muted-foreground">
+                Each pair is judged twice, once in each order, so position bias cancels out.
+              </p>
+            )}
+          </Step>
           <Step state={stepState(phase, "finalizing")} title="Generating final comparison" />
         </ol>
       </CardContent>

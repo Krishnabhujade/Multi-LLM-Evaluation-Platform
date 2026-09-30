@@ -39,7 +39,7 @@ await executeRun(id, deps, (event) => {
       console.log(`  ✗ ${event.responseId}: ${event.errorCode} — ${event.message}`);
       break;
     case "judging.started":
-      console.log(`Evaluating ${event.total} responses…`);
+      console.log(`Judging started (${event.total} ${event.unit}s expected)…`);
       break;
     case "run.failed":
       console.log(`Run failed: ${event.message}`);

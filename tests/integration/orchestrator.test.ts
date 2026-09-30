@@ -12,6 +12,7 @@ import { LLMError } from "@/server/llm/errors";
 import { DemoProvider } from "@/server/llm/providers/demo";
 import { ProviderRegistry } from "@/server/llm/registry";
 import type { GenerateRequest } from "@/server/llm/types";
+import { sleep } from "@/server/llm/resilience";
 import { logger } from "@/server/observability/logger";
 import { InMemoryRunStore, buildContext } from "../helpers/in-memory-store";
 import { answerAfter, createScriptedProvider, failWith, hang } from "../helpers/scripted-provider";
@@ -340,6 +341,247 @@ describe("evaluation orchestrator — scoring and winner", () => {
       runId: context.run.id,
       winnerResponseId: a,
     });
+  });
+});
+
+describe("evaluation orchestrator — judging overlaps model calls", () => {
+  const indexOf = (events: RunEvent[], predicate: (event: RunEvent) => boolean) =>
+    events.findIndex(predicate);
+
+  it("judges fast responses while a slow model is still answering", async () => {
+    const { provider } = createScriptedProvider("alpha", {
+      fast: answerAfter(5, "Fast answer."),
+      slow: answerAfter(200, "Slow answer."),
+    });
+    const { store, deps } = setup([provider], { timeoutMs: 2_000 });
+    const context = store.add(buildContext(["alpha:fast", "alpha:slow"]));
+    const [fast, slow] = context.slots.map((slot) => slot.responseId);
+
+    const events = await run(deps, context.run.id);
+
+    const fastJudged = indexOf(
+      events,
+      (event) => event.type === "judging.progress" && event.responseId === fast,
+    );
+    const slowDone = indexOf(
+      events,
+      (event) => event.type === "model.completed" && event.responseId === slow,
+    );
+    expect(fastJudged).toBeGreaterThan(-1);
+    expect(fastJudged).toBeLessThan(slowDone);
+    expect(store.run(context.run.id).status).toBe("COMPLETED");
+    expect(store.judgements.get(slow!)).toMatchObject({ status: "SCORED" });
+  });
+
+  it("shrinks the judging plan when a model fails after judging started", async () => {
+    const { provider } = createScriptedProvider("alpha", {
+      fast: answerAfter(5),
+      late: async (request) => {
+        await sleep(100, request.signal);
+        throw new LLMError("UNAVAILABLE", "went down");
+      },
+    });
+    const { store, deps } = setup([provider], { maxRetries: 0 });
+    const context = store.add(buildContext(["alpha:fast", "alpha:late"]));
+
+    const events = await run(deps, context.run.id);
+
+    expect(events.find((event) => event.type === "judging.started")).toMatchObject({
+      total: 2,
+      unit: "response",
+    });
+    expect(events.find((event) => event.type === "judging.planned")).toMatchObject({
+      total: 1,
+      unit: "response",
+    });
+    expect(store.run(context.run.id).status).toBe("COMPLETED");
+  });
+
+  it("compares a pair as soon as both of its responses have arrived", async () => {
+    const { provider } = createScriptedProvider("alpha", {
+      a: answerAfter(5, "Answer A"),
+      b: answerAfter(5, "Answer B"),
+      c: answerAfter(250, "Answer C"),
+    });
+    const { store, deps } = setup([provider], { timeoutMs: 2_000 });
+    const context = store.add(
+      buildContext(["alpha:a", "alpha:b", "alpha:c"], { mode: "PAIRWISE" }),
+    );
+    const c = context.slots[2]!.responseId;
+
+    const events = await run(deps, context.run.id);
+
+    const firstComparison = indexOf(events, (event) => event.type === "judging.progress");
+    const cDone = indexOf(
+      events,
+      (event) => event.type === "model.completed" && event.responseId === c,
+    );
+    expect(firstComparison).toBeLessThan(cDone);
+    expect(store.comparisons).toHaveLength(3);
+    // Canonical A/B follows the seeded judging order, not arrival order.
+    for (const comparison of store.comparisons) {
+      const order = (id: string) =>
+        context.slots.find((slot) => slot.responseId === id)!.judgeOrder;
+      expect(order(comparison.responseAId)).toBeLessThan(order(comparison.responseBId));
+    }
+  });
+});
+
+describe("evaluation orchestrator — pairwise mode", () => {
+  const CRITERIA = [
+    "accuracy",
+    "relevance",
+    "clarity",
+    "completeness",
+    "conciseness",
+    "instruction_following",
+  ];
+  const QUALITY: Record<string, number> = { "Answer A": 3, "Answer B": 1, "Answer C": 2 };
+  const fenced = (text: string, tag: string) =>
+    new RegExp(`<${tag}>\\n([\\s\\S]*?)\\n</${tag}>`).exec(text)?.[1] ?? "";
+  const verdict = (winner: string) =>
+    JSON.stringify({
+      criteria: Object.fromEntries(
+        CRITERIA.map((key) => [key, { reasoning: `Response ${winner} is better.`, winner }]),
+      ),
+      summary: `Response ${winner} is better than the other response.`,
+    });
+  /** A fair judge: prefers the better answer wherever it is shown. */
+  const fairJudge = async (request: GenerateRequest) => {
+    const text = request.messages.at(-1)!.content;
+    const a = QUALITY[fenced(text, "response_a")]!;
+    const b = QUALITY[fenced(text, "response_b")]!;
+    return { content: verdict(a > b ? "A" : "B") };
+  };
+
+  function setupPairwise(judge: Parameters<typeof createScriptedProvider>[1][string]) {
+    const { provider: judges } = createScriptedProvider("judgeco", { judge });
+    const { provider } = createScriptedProvider("alpha", {
+      a: answerAfter(1, "Answer A"),
+      b: answerAfter(1, "Answer B"),
+      c: answerAfter(1, "Answer C"),
+      down: failWith(() => new LLMError("UNAVAILABLE", "down")),
+    });
+    return setup([provider, judges], { maxRetries: 0 });
+  }
+
+  it("judges every pair in both orders and ranks by head-to-head win rate", async () => {
+    const { store, deps } = setupPairwise(fairJudge);
+    const context = store.add(
+      buildContext(["alpha:a", "alpha:b", "alpha:c", "alpha:down"], {
+        mode: "PAIRWISE",
+        judgeModelRef: "judgeco:judge",
+      }),
+    );
+    const [a, b, c] = context.slots.map((slot) => slot.responseId);
+
+    const events = await run(deps, context.run.id);
+
+    // 3 successful responses → 3 pairs × 2 orders = 6 judge calls, all traced.
+    const judgeCalls = store.calls.filter((call) => call.kind === "JUDGE");
+    expect(judgeCalls).toHaveLength(6);
+    expect(judgeCalls.every((call) => call.responseId)).toBe(true);
+
+    expect(store.comparisons).toHaveLength(3);
+    for (const comparison of store.comparisons) {
+      expect(comparison).toMatchObject({ runId: context.run.id, consistent: true, orders: 2 });
+    }
+    const ab = store.comparisons.find((x) => x.responseAId === a && x.responseBId === b)!;
+    expect(ab.winner).toBe("A");
+    expect(Object.values(ab.criteria).every((outcome) => outcome === "A")).toBe(true);
+    // Positional labels in the judge's summary are rewritten to the run's anonymous labels.
+    expect(ab.summary).toBe("Response A is better than the other response.");
+    const bc = store.comparisons.find((x) => x.responseAId === b && x.responseBId === c)!;
+    expect(bc.winner).toBe("B");
+    expect(bc.summary).toBe("Response C is better than the other response.");
+
+    expect(store.run(context.run.id)).toMatchObject({ status: "COMPLETED", winnerResponseId: a });
+    expect(store.rankings.get(a!)).toMatchObject({ overallScore: 10, rank: 1 });
+    expect(store.rankings.get(c!)).toMatchObject({ overallScore: 5, rank: 2 });
+    expect(store.rankings.get(b!)).toMatchObject({ overallScore: 0, rank: 3 });
+    expect(store.judgements.get(a!)).toMatchObject({
+      status: "SCORED",
+      judgedBy: "judgeco:judge",
+      summary: expect.stringMatching(/^Won 2, tied 0 and lost 0 of 2/),
+    });
+
+    expect(events.find((event) => event.type === "judging.started")).toMatchObject({
+      unit: "comparison",
+      total: 3,
+    });
+    const progress = events.filter((event) => event.type === "judging.progress");
+    expect(progress.map((event) => event.type === "judging.progress" && event.completed)).toEqual([
+      1, 2, 3,
+    ]);
+    expect(events.filter((event) => event.type === "response.judged")).toHaveLength(3);
+  });
+
+  it("turns a position-biased judge's verdicts into ties", async () => {
+    const { store, deps } = setupPairwise(async () => ({ content: verdict("A") }));
+    const context = store.add(
+      buildContext(["alpha:a", "alpha:b"], { mode: "PAIRWISE", judgeModelRef: "judgeco:judge" }),
+    );
+    const [a, b] = context.slots.map((slot) => slot.responseId);
+
+    await run(deps, context.run.id);
+
+    expect(store.comparisons).toHaveLength(1);
+    expect(store.comparisons[0]).toMatchObject({ winner: "TIE", consistent: false, orders: 2 });
+    expect(store.rankings.get(a!)).toMatchObject({ overallScore: 5 });
+    expect(store.rankings.get(b!)).toMatchObject({ overallScore: 5 });
+  });
+
+  it("uses the surviving order when one presentation order cannot be judged", async () => {
+    const { store, deps } = setupPairwise(async (request, call) => {
+      const text = request.messages.at(-1)!.content;
+      if (fenced(text, "response_a") === "Answer B") {
+        throw new LLMError("UNAVAILABLE", `judge down (call ${call})`);
+      }
+      return fairJudge(request);
+    });
+    const context = store.add(
+      buildContext(["alpha:a", "alpha:b"], { mode: "PAIRWISE", judgeModelRef: "judgeco:judge" }),
+    );
+
+    await run(deps, context.run.id);
+
+    expect(store.comparisons[0]).toMatchObject({ winner: "A", consistent: false, orders: 1 });
+    expect(store.run(context.run.id)).toMatchObject({
+      status: "COMPLETED",
+      winnerResponseId: context.slots[0]!.responseId,
+    });
+  });
+
+  it("falls back to pointwise scoring when only one response succeeds", async () => {
+    const { store, deps } = setupPairwise(fairJudge);
+    const context = store.add(buildContext(["alpha:a", "alpha:down"], { mode: "PAIRWISE" }));
+
+    const events = await run(deps, context.run.id);
+
+    expect(events.find((event) => event.type === "judging.started")).toMatchObject({
+      unit: "response",
+      total: 1,
+    });
+    expect(store.comparisons).toHaveLength(0);
+    expect(store.judgements.get(context.slots[0]!.responseId)).toMatchObject({
+      status: "SCORED",
+      judgedBy: "demo:demo-judge",
+    });
+  });
+
+  it("works end to end with the synthetic demo judge", async () => {
+    const { store, deps } = setupPairwise(fairJudge);
+    const context = store.add(
+      buildContext(["alpha:a", "alpha:b", "alpha:c"], { mode: "PAIRWISE" }),
+    );
+
+    await run(deps, context.run.id);
+
+    expect(store.comparisons).toHaveLength(3);
+    // The demo judge's heuristics depend on content only, so both orders always agree.
+    expect(store.comparisons.every((comparison) => comparison.consistent)).toBe(true);
+    expect(store.run(context.run.id).status).toBe("COMPLETED");
+    expect(store.rankings.size).toBe(3);
   });
 });
 

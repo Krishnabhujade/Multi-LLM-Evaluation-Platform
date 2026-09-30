@@ -147,10 +147,11 @@ model EvaluationRun {
   startedAt        DateTime?
   completedAt      DateTime?
 
-  judgeModel Model           @relation("JudgeModel", fields: [judgeModelId], references: [id])
-  winner     ModelResponse?  @relation("RunWinner", fields: [winnerResponseId], references: [id], onDelete: SetNull)
-  responses  ModelResponse[] @relation("RunResponses")
+  judgeModel Model                @relation("JudgeModel", fields: [judgeModelId], references: [id])
+  winner     ModelResponse?       @relation("RunWinner", fields: [winnerResponseId], references: [id], onDelete: SetNull)
+  responses  ModelResponse[]      @relation("RunResponses")
   llmCalls   LlmCall[]
+  pairwise   PairwiseComparison[]
 
   @@index([userId, createdAt(sort: Desc)])
   @@index([category, createdAt(sort: Desc)])
@@ -195,11 +196,13 @@ model ModelResponse {
   rank         Int?
   createdAt    DateTime    @default(now())
 
-  run      EvaluationRun    @relation("RunResponses", fields: [runId], references: [id], onDelete: Cascade)
-  model    Model            @relation(fields: [modelId], references: [id])
-  wonRun   EvaluationRun?   @relation("RunWinner")
+  run      EvaluationRun        @relation("RunResponses", fields: [runId], references: [id], onDelete: Cascade)
+  model    Model                @relation(fields: [modelId], references: [id])
+  wonRun   EvaluationRun?       @relation("RunWinner")
   scores   CriterionScore[]
   llmCalls LlmCall[]
+  pairsAsA PairwiseComparison[] @relation("PairwiseA")
+  pairsAsB PairwiseComparison[] @relation("PairwiseB")
 
   @@unique([runId, modelId])
   @@index([modelId, createdAt(sort: Desc)])
@@ -246,4 +249,37 @@ model LlmCall {
 
   @@index([runId, startedAt])
   @@map("llm_calls")
+}
+
+enum PairwiseOutcome {
+  A
+  B
+  TIE
+}
+
+/// One head-to-head judgement in pairwise mode. The pair is judged in both presentation orders;
+/// criteria where the two orders disagree are recorded as TIE (position-bias check).
+model PairwiseComparison {
+  id          String          @id @default(cuid())
+  runId       String
+  responseAId String
+  responseBId String
+  /// Overall winner, from the weighted criterion outcomes.
+  winner      PairwiseOutcome
+  /// Final per-criterion outcomes: { [criterionKey]: "A" | "B" | "TIE" }.
+  criteria    Json
+  /// Both presentation orders agreed on every criterion.
+  consistent  Boolean
+  /// Number of presentation orders that produced a valid verdict (1 or 2).
+  orders      Int
+  summary     String
+  judgedBy    String?
+  createdAt   DateTime        @default(now())
+
+  run       EvaluationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  responseA ModelResponse @relation("PairwiseA", fields: [responseAId], references: [id], onDelete: Cascade)
+  responseB ModelResponse @relation("PairwiseB", fields: [responseBId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+  @@map("pairwise_comparisons")
 }

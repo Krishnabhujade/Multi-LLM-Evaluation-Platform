@@ -11,6 +11,9 @@
   --color-viz-track: var(--viz-track);
   --color-viz-ordinal-1: var(--viz-ordinal-1);
   --color-viz-ordinal-2: var(--viz-ordinal-2);
+  --color-viz-win: var(--viz-win);
+  --color-viz-tie: var(--viz-tie);
+  --color-viz-loss: var(--viz-loss);
   --color-series-1: var(--series-1);
   --color-series-2: var(--series-2);
   --color-series-3: var(--series-3);
@@ -108,6 +111,11 @@
   /* Two ordered steps of the same blue (e.g. input vs output tokens); step 250 clears 2:1. */
   --viz-ordinal-1: #86b6ef;
   --viz-ordinal-2: #2a78d6;
+  /* Diverging win/loss cell tints (blue ↔ red poles, neutral gray midpoint for ties). Cells
+     always carry a text label, so the tint is secondary encoding. */
+  --viz-win: #cde2fb;
+  --viz-tie: #f0efec;
+  --viz-loss: #fbd9d8;
   /* Categorical slots in fixed order (identity follows the model, never its rank). */
   --series-1: #2a78d6;
   --series-2: #eb6834;
@@ -163,6 +171,9 @@
   /* Step 600 is the darkest that still clears 2:1 on the dark surface. */
   --viz-ordinal-1: #184f95;
   --viz-ordinal-2: #3987e5;
+  --viz-win: #184f95;
+  --viz-tie: #383835;
+  --viz-loss: #6b2626;
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;

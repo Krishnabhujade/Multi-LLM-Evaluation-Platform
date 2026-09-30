@@ -110,6 +110,7 @@ export function runDetail(
     completedAt: "2026-09-29T10:00:05.000Z",
     responses,
     calls: [],
+    pairwise: [],
     ...overrides,
   };
 }

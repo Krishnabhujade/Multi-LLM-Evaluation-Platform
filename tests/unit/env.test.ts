@@ -9,8 +9,8 @@ describe("parseEnv", () => {
     expect(env.MODEL_MAX_RETRIES).toBe(2);
     expect(env.JUDGE_MODEL).toBe("groq:openai/gpt-oss-120b");
     expect(env.JUDGE_FALLBACK_MODELS).toEqual([
-      "gemini:gemini-3.8-flash",
       "groq:openai/gpt-oss-20b",
+      "gemini:gemini-3.5-flash-lite",
     ]);
     expect(env.OPENROUTER_FREE_ONLY).toBe(true);
     expect(env.GROQ_MODELS).toEqual([]);

@@ -16,6 +16,13 @@ export interface LiveModelState {
   judge?: "pending" | "scored" | "failed";
 }
 
+export interface JudgingProgress {
+  completed: number;
+  total: number;
+  /** A step scores one response (standard) or finishes one head-to-head comparison (pairwise). */
+  unit: "response" | "comparison";
+}
+
 const POLL_INTERVAL_MS = 1_500;
 
 function phaseOf(run: RunDetail): RunPhase {
@@ -63,7 +70,7 @@ export function useRunStream(initial: RunDetail) {
   const [run, setRun] = useState(initial);
   const [phase, setPhase] = useState<RunPhase>(() => phaseOf(initial));
   const [live, setLive] = useState(() => liveOf(initial));
-  const [judging, setJudging] = useState<{ completed: number; total: number } | null>(null);
+  const [judging, setJudging] = useState<JudgingProgress | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const started = useRef(false);
@@ -99,6 +106,16 @@ export function useRunStream(initial: RunDetail) {
       await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
     }
   }, [refresh]);
+
+  const markJudged = useCallback((responseId: string, status: "SCORED" | "FAILED") => {
+    setLive((current) => ({
+      ...current,
+      [responseId]: {
+        ...current[responseId]!,
+        judge: status === "SCORED" ? "scored" : "failed",
+      },
+    }));
+  }, []);
 
   const handleEvent = useCallback(
     (event: RunEvent) => {
@@ -141,18 +158,29 @@ export function useRunStream(initial: RunDetail) {
           scheduleRefresh();
           break;
         case "judging.started":
-          setPhase("judging");
-          setJudging({ completed: 0, total: event.total });
+          // Judging overlaps with slower models; the phase moves on once every model is done.
+          setJudging({ completed: 0, total: event.total, unit: event.unit });
           break;
-        case "judging.progress":
-          setJudging({ completed: event.completed, total: event.total });
-          setLive((current) => ({
-            ...current,
-            [event.responseId]: {
-              ...current[event.responseId]!,
-              judge: event.status === "SCORED" ? "scored" : "failed",
-            },
+        case "judging.planned":
+          setJudging((current) => ({
+            completed: current?.completed ?? 0,
+            total: event.total,
+            unit: event.unit,
           }));
+          break;
+        case "judging.progress": {
+          const { responseId, status } = event;
+          setJudging((current) => ({
+            completed: event.completed,
+            total: event.total,
+            unit: current?.unit ?? "response",
+          }));
+          if (responseId) markJudged(responseId, status);
+          scheduleRefresh();
+          break;
+        }
+        case "response.judged":
+          markJudged(event.responseId, event.status);
           scheduleRefresh();
           break;
         case "run.completed":
@@ -163,7 +191,7 @@ export function useRunStream(initial: RunDetail) {
           break;
       }
     },
-    [scheduleRefresh],
+    [markJudged, scheduleRefresh],
   );
 
   const stream = useCallback(async () => {

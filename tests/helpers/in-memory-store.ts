@@ -10,6 +10,7 @@ import type {
   ExecutionContext,
   JudgementRecord,
   LlmCallRecord,
+  PairwiseRecord,
   RunConfig,
 } from "@/server/evaluation/types";
 import type { ModelPricing } from "@/server/llm/catalog";
@@ -29,6 +30,7 @@ export class InMemoryRunStore implements RunStore {
   readonly judgements = new Map<string, JudgementRecord>();
   readonly rankings = new Map<string, RankingEntry>();
   readonly calls: LlmCallRecord[] = [];
+  readonly comparisons: Array<PairwiseRecord & { runId: string }> = [];
   readonly ensuredModels: string[] = [];
 
   add(context: ExecutionContext) {
@@ -58,6 +60,10 @@ export class InMemoryRunStore implements RunStore {
 
   async saveJudgement(responseId: string, judgement: JudgementRecord) {
     this.judgements.set(responseId, judgement);
+  }
+
+  async savePairwiseComparison(runId: string, comparison: PairwiseRecord) {
+    this.comparisons.push({ runId, ...comparison });
   }
 
   async recordLlmCalls(calls: LlmCallRecord[]) {

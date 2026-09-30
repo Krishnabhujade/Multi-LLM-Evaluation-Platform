@@ -15,14 +15,15 @@ import type { ChatMessage } from "@/server/llm/types";
  *    overall score is computed server-side.
  */
 
-const DELIMITER_TAGS = /<(\/?)(system_prompt|user_prompt|candidate_response)(\s[^>]*)?>/gi;
+const DELIMITER_TAGS =
+  /<(\/?)(system_prompt|user_prompt|candidate_response|response_a|response_b)(\s[^>]*)?>/gi;
 
 /** Replaces our delimiter tags inside untrusted text with look-alikes the judge won't parse as fences. */
 export function neutralizeDelimiters(text: string): string {
   return text.replace(DELIMITER_TAGS, (_match, slash: string, name: string) => `‹${slash}${name}›`);
 }
 
-function criteriaBlock(criteria: RunCriterion[]): string {
+export function criteriaBlock(criteria: RunCriterion[]): string {
   return criteria
     .map((criterion, index) =>
       [

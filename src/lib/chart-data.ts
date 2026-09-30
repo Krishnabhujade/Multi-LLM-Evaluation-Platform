@@ -162,3 +162,89 @@ export function buildTraceRows(run: RunDetail): { rows: TraceRow[]; totalMs: num
   const totalMs = Math.max(...rows.map((row) => row.offsetMs + row.durationMs));
   return { rows, totalMs };
 }
+
+export type HeadToHead = "WIN" | "TIE" | "LOSS";
+
+export interface WinMatrixCell {
+  outcome: HeadToHead;
+  /** Criteria won / tied / lost by the row model against the column model. */
+  criteria: { won: number; tied: number; lost: number };
+  perCriterion: Array<{ key: string; name: string; outcome: HeadToHead }>;
+  consistent: boolean;
+  orders: number;
+  summary: string;
+}
+
+export interface WinMatrix {
+  /** Compared models, best rank first (unranked last). */
+  rows: SeriesRow[];
+  /** `cells[rowId][columnId]`, from the row model's point of view. */
+  cells: Record<string, Record<string, WinMatrixCell>>;
+  records: Record<string, { wins: number; ties: number; losses: number }>;
+  consistentPairs: number;
+  totalPairs: number;
+}
+
+/** Head-to-head results of a pairwise run as a square matrix (row model vs column model). */
+export function buildWinMatrix(run: RunDetail): WinMatrix {
+  const series = seriesOf(run);
+  const rank = new Map(run.responses.map((response) => [response.id, response.rank]));
+  const names = new Map(run.criteria.map((criterion) => [criterion.key, criterion.name]));
+  const compared = new Set(
+    run.pairwise.flatMap((comparison) => [comparison.responseAId, comparison.responseBId]),
+  );
+  const rows = [...compared]
+    .map((id) => series.get(id))
+    .filter((row) => row !== undefined)
+    .sort(
+      (a, b) =>
+        (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity) ||
+        a.seriesIndex - b.seriesIndex,
+    );
+
+  const cells: WinMatrix["cells"] = Object.fromEntries(rows.map((row) => [row.id, {}]));
+  const records: WinMatrix["records"] = Object.fromEntries(
+    rows.map((row) => [row.id, { wins: 0, ties: 0, losses: 0 }]),
+  );
+  const view = (outcome: "A" | "B" | "TIE", side: "A" | "B"): HeadToHead =>
+    outcome === "TIE" ? "TIE" : outcome === side ? "WIN" : "LOSS";
+
+  for (const comparison of run.pairwise) {
+    for (const side of ["A", "B"] as const) {
+      const self = side === "A" ? comparison.responseAId : comparison.responseBId;
+      const other = side === "A" ? comparison.responseBId : comparison.responseAId;
+      const perCriterion = run.criteria
+        .filter((criterion) => criterion.key in comparison.criteria)
+        .map((criterion) => ({
+          key: criterion.key,
+          name: names.get(criterion.key) ?? criterion.key,
+          outcome: view(comparison.criteria[criterion.key]!, side),
+        }));
+      const outcome = view(comparison.winner, side);
+      cells[self]![other] = {
+        outcome,
+        criteria: {
+          won: perCriterion.filter((entry) => entry.outcome === "WIN").length,
+          tied: perCriterion.filter((entry) => entry.outcome === "TIE").length,
+          lost: perCriterion.filter((entry) => entry.outcome === "LOSS").length,
+        },
+        perCriterion,
+        consistent: comparison.consistent,
+        orders: comparison.orders,
+        summary: comparison.summary,
+      };
+      const record = records[self]!;
+      if (outcome === "WIN") record.wins += 1;
+      else if (outcome === "TIE") record.ties += 1;
+      else record.losses += 1;
+    }
+  }
+
+  return {
+    rows,
+    cells,
+    records,
+    consistentPairs: run.pairwise.filter((comparison) => comparison.consistent).length,
+    totalPairs: run.pairwise.length,
+  };
+}

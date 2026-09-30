@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronDown, CornerDownLeft, Loader2, Play, Sparkles } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { toast } from "sonner";
@@ -32,7 +33,8 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import type { ModelListItem } from "@/lib/api-types";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type { CriterionItem, EvaluationMode, ModelListItem } from "@/lib/api-types";
 import {
   CATEGORY_CAPABILITIES,
   CATEGORY_LABELS,
@@ -42,9 +44,10 @@ import {
 import {
   CreateEvaluationSchema,
   MAX_MODELS_PER_RUN,
+  MAX_PAIRWISE_MODELS,
   type CreateEvaluationInput,
 } from "@/lib/evaluation-request";
-import { isCandidateModel, selectModelsForCategory } from "@/lib/models";
+import { defaultModelSelection, selectModelsForCategory } from "@/lib/models";
 import { cn } from "@/lib/utils";
 
 const EXAMPLES: Array<{ label: string; prompt: string; category: TaskCategory }> = [
@@ -74,22 +77,6 @@ const EXAMPLES: Array<{ label: string; prompt: string; category: TaskCategory }>
 
 const MAX_TOKEN_OPTIONS = [256, 512, 1024, 2048, 4096];
 
-/** Pre-select one model per connected provider (up to 4); fall back to demo models. */
-function defaultSelection(models: ModelListItem[]): string[] {
-  const available = models.filter((model) => model.available && isCandidateModel(model));
-  const real = available.filter((model) => !model.isDemo);
-  if (real.length > 0) {
-    const picks = new Map<string, string>(); // providerId → first model ref
-    for (const model of real) {
-      if (!picks.has(model.providerId)) picks.set(model.providerId, model.ref);
-    }
-    return [...picks.values()].slice(0, 4);
-  }
-  return available
-    .filter((model) => ["demo-concise", "demo-verbose", "demo-flaky"].includes(model.modelId))
-    .map((model) => model.ref);
-}
-
 type FieldErrors = Partial<Record<"prompt" | "models" | "criteria" | "form", string>>;
 
 export function EvaluationForm({
@@ -97,20 +84,24 @@ export function EvaluationForm({
   providers,
   defaultJudgeRef,
   unreliableRefs = [],
+  customCriteria = [],
 }: {
   models: ModelListItem[];
   providers: ProviderOption[];
   defaultJudgeRef: string | null;
-  /** Models failing often in the last 24 h; auto-select avoids them. */
+  /** The user's custom criteria, offered (off by default) next to the built-ins. */
+  customCriteria?: CriterionItem[];
+  /** Models failing often or very slow in the last 24 h; auto-select avoids them. */
   unreliableRefs?: string[];
 }) {
   const router = useRouter();
   const [prompt, setPrompt] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [category, setCategory] = useState<TaskCategory>("GENERAL_QA");
-  const [selected, setSelected] = useState<string[]>(() => defaultSelection(models));
+  const [selected, setSelected] = useState<string[]>(() => defaultModelSelection(models));
   const [autoSelect, setAutoSelect] = useState(false);
-  const [criteria, setCriteria] = useState<CriterionState[]>(defaultCriteria);
+  const [mode, setMode] = useState<EvaluationMode>("STANDARD");
+  const [criteria, setCriteria] = useState<CriterionState[]>(() => defaultCriteria(customCriteria));
   const [blind, setBlind] = useState(true);
   const [judgeRef, setJudgeRef] = useState(defaultJudgeRef ?? "");
   const [temperature, setTemperature] = useState(0.7);
@@ -125,8 +116,9 @@ export function EvaluationForm({
       selectModelsForCategory(category, models, {
         judgeRef: judgeRef || null,
         avoid: unreliableRefs,
+        max: mode === "PAIRWISE" ? MAX_PAIRWISE_MODELS : undefined,
       }),
-    [category, models, judgeRef, unreliableRefs],
+    [category, models, judgeRef, unreliableRefs, mode],
   );
   const skippedUnreliable = models.filter(
     (model) => model.available && unreliableRefs.includes(model.ref),
@@ -135,6 +127,8 @@ export function EvaluationForm({
   const judgeIsCandidate = judgeRef !== "" && effectiveModels.includes(judgeRef);
   const judgeName = judgeOptions.find((model) => model.ref === judgeRef)?.displayName;
   const enabledCriteria = criteria.filter((criterion) => criterion.enabled).length;
+  const modelCount = effectiveModels.length;
+  const pairwiseCalls = modelCount * (modelCount - 1);
 
   async function submit(event?: FormEvent) {
     event?.preventDefault();
@@ -148,11 +142,21 @@ export function EvaluationForm({
       autoSelect,
       temperature,
       maxTokens,
-      mode: "STANDARD",
+      mode,
       blind,
       criteria: criteria
         .filter((criterion) => criterion.enabled)
-        .map((criterion) => ({ key: criterion.key, weight: criterion.weight })),
+        .map((criterion) =>
+          criterion.builtIn
+            ? { key: criterion.key, weight: criterion.weight }
+            : {
+                key: criterion.key,
+                name: criterion.name,
+                description: criterion.description,
+                rubric: criterion.rubric,
+                weight: criterion.weight,
+              },
+        ),
       judgeModel: judgeRef && judgeRef !== defaultJudgeRef ? judgeRef : undefined,
     };
 
@@ -299,7 +303,7 @@ export function EvaluationForm({
                 </p>
                 {skippedUnreliable.length > 0 && (
                   <p className="text-xs text-muted-foreground">
-                    Skipped for failing often in the last 24 h:{" "}
+                    Skipped for failing often or responding very slowly in the last 24 h:{" "}
                     {skippedUnreliable.map((model) => model.displayName).join(", ")}.
                   </p>
                 )}
@@ -355,7 +359,7 @@ export function EvaluationForm({
                 providers={providers}
                 selected={selected}
                 onChange={setSelected}
-                max={MAX_MODELS_PER_RUN}
+                max={mode === "PAIRWISE" ? MAX_PAIRWISE_MODELS : MAX_MODELS_PER_RUN}
                 error={errors.models}
               />
             )}
@@ -389,32 +393,50 @@ export function EvaluationForm({
             </div>
 
             <div className="space-y-2">
-              <Label>Mode</Label>
-              <div
-                className="grid grid-cols-2 gap-1 rounded-lg bg-muted p-1 text-sm"
-                role="radiogroup"
+              <Label id="mode-label">Mode</Label>
+              <ToggleGroup
+                type="single"
+                value={mode}
+                onValueChange={(value) => value && setMode(value as EvaluationMode)}
+                aria-labelledby="mode-label"
+                spacing={1}
+                className="grid w-full grid-cols-2 rounded-lg bg-muted p-1"
               >
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked="true"
-                  className="rounded-md bg-background px-2 py-1 font-medium shadow-sm"
-                >
-                  Standard
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked="false"
-                  disabled
-                  className="flex items-center justify-center gap-1 rounded-md px-2 py-1 text-muted-foreground"
-                >
-                  Pairwise{" "}
-                  <Badge variant="outline" className="h-4 px-1 text-[10px]">
-                    Soon
-                  </Badge>
-                </button>
-              </div>
+                {(["STANDARD", "PAIRWISE"] as const).map((value) => (
+                  <ToggleGroupItem
+                    key={value}
+                    value={value}
+                    size="sm"
+                    className="w-full text-muted-foreground hover:bg-background/60 data-[state=on]:bg-background data-[state=on]:text-foreground data-[state=on]:shadow-sm"
+                  >
+                    {value === "STANDARD" ? "Standard" : "Pairwise"}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              {mode === "STANDARD" ? (
+                <p className="text-xs text-muted-foreground">
+                  The judge scores each response on its own, 0–10 per criterion.
+                </p>
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  The judge compares every pair head-to-head, in both orders to cancel position
+                  bias. Up to {MAX_PAIRWISE_MODELS} models
+                  {modelCount >= 2 && modelCount <= MAX_PAIRWISE_MODELS && (
+                    <>
+                      {" "}
+                      · <span className="text-foreground tabular-nums">{pairwiseCalls}</span> judge
+                      calls
+                    </>
+                  )}
+                  .
+                </p>
+              )}
+              {mode === "PAIRWISE" && modelCount > MAX_PAIRWISE_MODELS && (
+                <p role="alert" className="text-xs text-destructive">
+                  Pairwise mode compares at most {MAX_PAIRWISE_MODELS} models — deselect{" "}
+                  {modelCount - MAX_PAIRWISE_MODELS}.
+                </p>
+              )}
             </div>
 
             <div className="flex items-start justify-between gap-3">
@@ -460,10 +482,24 @@ export function EvaluationForm({
         <Card>
           <CardHeader>
             <CardTitle>Criteria &amp; weights</CardTitle>
-            <CardDescription>Each criterion is scored 0–10.</CardDescription>
+            <CardDescription>
+              {mode === "PAIRWISE"
+                ? "Each pair is compared per criterion."
+                : "Each criterion is scored 0–10."}
+            </CardDescription>
+            <CardAction>
+              <Button asChild variant="link" size="sm" className="h-auto px-0">
+                <Link href="/criteria">Manage</Link>
+              </Button>
+            </CardAction>
           </CardHeader>
           <CardContent>
-            <CriteriaEditor criteria={criteria} onChange={setCriteria} error={errors.criteria} />
+            <CriteriaEditor
+              criteria={criteria}
+              onChange={setCriteria}
+              onReset={() => setCriteria(defaultCriteria(customCriteria))}
+              error={errors.criteria}
+            />
           </CardContent>
         </Card>
 

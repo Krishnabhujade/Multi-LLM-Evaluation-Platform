@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { EvaluationForm } from "@/components/evaluation/evaluation-form";
 import { DatabaseSetupNotice, DemoModeNotice } from "@/components/shared/setup-notice";
+import { CriteriaRepository } from "@/server/db/criteria-repository";
 import { getUnreliableModelRefs } from "@/server/db/model-health";
 import { getPrisma } from "@/server/db/prisma";
 import { getEnv } from "@/server/env";
@@ -16,13 +17,16 @@ export default async function NewEvaluationPage() {
   const env = getEnv();
   const registry = getProviderRegistry();
 
-  const [models, defaultJudgeRef, unreliableRefs] = await Promise.all([
+  const [models, defaultJudgeRef, unreliableRefs, criteria] = await Promise.all([
     registry.listModels({ includeUnavailable: true }),
     resolveJudge(registry, env)
       .then(({ model }) => model.ref)
       .catch(() => null),
     // Recent failure data (for the auto-select preview); optional — no database, no data.
     env.DATABASE_URL ? getUnreliableModelRefs(getPrisma()).catch(() => []) : Promise.resolve([]),
+    env.DATABASE_URL
+      ? new CriteriaRepository(getPrisma()).list(null).catch(() => [])
+      : Promise.resolve([]),
   ]);
   const providers = registry.summaries();
   const hasRealProvider = providers.some((provider) => provider.configured && !provider.isDemo);
@@ -51,6 +55,7 @@ export default async function NewEvaluationPage() {
         providers={providers}
         defaultJudgeRef={defaultJudgeRef}
         unreliableRefs={unreliableRefs}
+        customCriteria={criteria.filter((criterion) => !criterion.isBuiltIn)}
       />
     </div>
   );

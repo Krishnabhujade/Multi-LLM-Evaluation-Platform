@@ -60,6 +60,18 @@ describe("CreateEvaluationSchema", () => {
     expect(CreateEvaluationSchema.safeParse({ prompt: "Hi" }).success).toBe(false);
   });
 
+  it("caps pairwise runs at four models", () => {
+    const models = ["a", "b", "c", "d", "e"].map((id) => `groq:${id}`);
+    expect(
+      CreateEvaluationSchema.safeParse({ ...base, mode: "PAIRWISE", models: models.slice(0, 4) })
+        .success,
+    ).toBe(true);
+    const tooMany = CreateEvaluationSchema.safeParse({ ...base, mode: "PAIRWISE", models });
+    expect(tooMany.success).toBe(false);
+    expect(tooMany.error?.issues[0]?.message).toMatch(/at most 4 models/);
+    expect(CreateEvaluationSchema.safeParse({ ...base, models }).success).toBe(true);
+  });
+
   it("accepts built-ins by key and custom criteria with a description", () => {
     const parsed = CreateEvaluationSchema.parse({
       ...base,

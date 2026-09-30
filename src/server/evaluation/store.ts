@@ -3,6 +3,7 @@ import type {
   ExecutionContext,
   JudgementRecord,
   LlmCallRecord,
+  PairwiseRecord,
 } from "@/server/evaluation/types";
 import type { RankingEntry } from "@/server/evaluation/scoring/ranking";
 import type { ModelInfo } from "@/server/llm/types";
@@ -25,6 +26,8 @@ export interface RunStore {
   markRunning(runId: string): Promise<boolean>;
   saveCandidateResult(responseId: string, result: CandidateResult): Promise<void>;
   saveJudgement(responseId: string, judgement: JudgementRecord): Promise<void>;
+  /** Pairwise mode: persists one head-to-head comparison. */
+  savePairwiseComparison(runId: string, comparison: PairwiseRecord): Promise<void>;
   recordLlmCalls(calls: LlmCallRecord[]): Promise<void>;
   /** Ensures a model row exists (e.g. a fallback judge) and returns its id. */
   ensureModel(model: ModelInfo): Promise<string>;

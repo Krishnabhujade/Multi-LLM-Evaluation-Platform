@@ -4,6 +4,8 @@ import { BUILT_IN_CRITERIA } from "@/lib/criteria";
 import { isValidModelRef } from "@/lib/model-ref";
 
 export const MAX_MODELS_PER_RUN = 8;
+/** Pairwise judging costs n(n−1) judge calls; 4 models = 12 calls, safe on free tiers. */
+export const MAX_PAIRWISE_MODELS = 4;
 
 const ModelRefSchema = z
   .string()
@@ -51,6 +53,13 @@ export const CreateEvaluationSchema = z
         code: "custom",
         path: ["models"],
         message: "Select at least one model or turn on auto-select",
+      });
+    }
+    if (value.mode === "PAIRWISE" && value.models.length > MAX_PAIRWISE_MODELS) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["models"],
+        message: `Pairwise mode compares at most ${MAX_PAIRWISE_MODELS} models (each pair costs two judge calls)`,
       });
     }
     if (new Set(value.models).size !== value.models.length) {

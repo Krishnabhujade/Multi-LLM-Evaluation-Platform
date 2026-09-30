@@ -71,10 +71,11 @@ const EnvSchema = z.object({
   HUGGINGFACE_MODELS: csvList(),
   OPENROUTER_FREE_ONLY: booleanFlag,
 
-  // LLM-as-a-judge. GPT-OSS 120B on Groq: a strong reasoning model that answers in seconds; the
-  // fallbacks are on other models/providers so one outage never leaves a run unscored.
+  // LLM-as-a-judge. GPT-OSS 120B on Groq: a strong reasoning model that answers in seconds. The
+  // fallbacks have their own rate-limit quotas (Groq limits are per model), and the first is fast
+  // so a rate-limited primary costs seconds, not a long wait on a busy model.
   JUDGE_MODEL: z.preprocess(emptyToUndefined, z.string().default("groq:openai/gpt-oss-120b")),
-  JUDGE_FALLBACK_MODELS: csvList(["gemini:gemini-3.8-flash", "groq:openai/gpt-oss-20b"]),
+  JUDGE_FALLBACK_MODELS: csvList(["groq:openai/gpt-oss-20b", "gemini:gemini-3.5-flash-lite"]),
   JUDGE_CONCURRENCY: integer(2, { min: 1, max: 16 }),
   /** Generous by default: thinking models spend part of the budget on reasoning tokens. */
   JUDGE_MAX_TOKENS: integer(3_000, { min: 256, max: 16_000 }),

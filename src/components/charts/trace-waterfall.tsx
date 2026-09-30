@@ -32,7 +32,7 @@ export function TraceWaterfall({ run }: { run: RunDetail }) {
   return (
     <ChartCard
       title="Execution trace"
-      description={`${rows.length} provider calls over ${formatLatency(totalMs)} — candidate calls run in parallel, then the judge scores each response.`}
+      description={`${rows.length} provider calls over ${formatLatency(totalMs)} — candidate calls run in parallel, then ${run.mode === "PAIRWISE" ? "the judge compares every pair in both orders" : "the judge scores each response"}.`}
     >
       <div className="space-y-2 sm:space-y-1.5" role="list">
         <div className="grid grid-cols-1 gap-3 text-[11px] text-muted-foreground sm:grid-cols-[minmax(0,11rem)_1fr]">
@@ -124,8 +124,9 @@ export function TraceWaterfall({ run }: { run: RunDetail }) {
       </div>
       <p className="mt-4 text-xs text-muted-foreground">
         Candidate bars use each model&apos;s color; judge calls are grey, labelled with the response
-        they scored and the judge that made the call (fallback judges included). Faded bars are
-        failed attempts that were retried or gave up.
+        {run.mode === "PAIRWISE" ? " shown first in the comparison" : " they scored"} and the judge
+        that made the call (fallback judges included). Faded bars are failed attempts that were
+        retried or gave up.
       </p>
     </ChartCard>
   );

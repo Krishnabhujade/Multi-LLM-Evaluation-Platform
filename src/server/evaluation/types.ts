@@ -1,4 +1,4 @@
-import type { EvaluationMode, RunCriterion } from "@/lib/api-types";
+import type { EvaluationMode, PairOutcome, RunCriterion } from "@/lib/api-types";
 import type { TaskCategory } from "@/lib/categories";
 import type { LLMErrorCode } from "@/lib/llm-errors";
 import type { ModelPricing } from "@/server/llm/catalog";
@@ -73,6 +73,23 @@ export type JudgementRecord =
       scores: Array<{ key: string; name: string; weight: number; score: number; reason: string }>;
     }
   | { status: "FAILED"; error: string };
+
+/** Pairwise verdict for one criterion or one pair: response A wins, B wins, or a tie. */
+export type { PairOutcome };
+
+/** One head-to-head comparison in pairwise mode, as persisted (A/B are canonical, not positional). */
+export interface PairwiseRecord {
+  responseAId: string;
+  responseBId: string;
+  winner: PairOutcome;
+  criteria: Record<string, PairOutcome>;
+  /** Both presentation orders agreed on every criterion. */
+  consistent: boolean;
+  /** Presentation orders that produced a valid verdict (1 or 2). */
+  orders: number;
+  summary: string;
+  judgedBy: string | null;
+}
 
 export interface LlmCallRecord {
   runId: string;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Capability } from "@/lib/capabilities";
-import { selectModelsForCategory } from "@/lib/models";
+import { defaultModelSelection, selectModelsForCategory } from "@/lib/models";
 
 const model = (
   ref: string,
@@ -88,5 +88,32 @@ describe("selectModelsForCategory", () => {
     );
     expect(selectModelsForCategory("GENERAL_QA", twoProviders)).toHaveLength(4);
     expect(selectModelsForCategory("GENERAL_QA", catalog, { max: 2 })).toHaveLength(2);
+  });
+});
+
+describe("defaultModelSelection", () => {
+  it("pre-selects the first model of each provider, except slow shared-pool providers", () => {
+    expect(defaultModelSelection(catalog)).toEqual([
+      "groq:qwen",
+      "gemini:flash-lite",
+      "huggingface:llama",
+    ]);
+  });
+
+  it("still uses OpenRouter when it is the only real provider", () => {
+    const onlyOpenRouter = catalog.filter(
+      (entry) => entry.providerId === "openrouter" || entry.isDemo,
+    );
+    expect(defaultModelSelection(onlyOpenRouter)).toEqual(["openrouter:nemotron"]);
+  });
+
+  it("falls back to demo models when no real provider is configured", () => {
+    const demoOnly = [
+      model("demo:demo-concise", ["general"], { isDemo: true }),
+      model("demo:demo-verbose", ["general"], { isDemo: true }),
+      model("demo:demo-judge", ["general"], { isDemo: true }),
+      model("groq:qwen", ["general"], { available: false }),
+    ];
+    expect(defaultModelSelection(demoOnly)).toEqual(["demo:demo-concise", "demo:demo-verbose"]);
   });
 });

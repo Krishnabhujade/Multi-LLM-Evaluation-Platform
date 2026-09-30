@@ -9,6 +9,37 @@ export function isCandidateModel(model: Pick<ModelListItem, "isDemo" | "modelId"
 export const AUTO_SELECT_MAX = 4;
 
 /**
+ * Providers whose models are not pre-selected on the form. OpenRouter's shared free pool is
+ * often rate-limited and its free models take 7–30 s, which would hold up every default run;
+ * they stay one click away in the picker and remain eligible for auto-select.
+ */
+export const NOT_PRESELECTED_PROVIDERS: readonly string[] = ["openrouter"];
+
+/**
+ * The form's initial selection: the first model of each connected provider (catalog order
+ * puts the most reliable model first), skipping `NOT_PRESELECTED_PROVIDERS` unless nothing else
+ * is available; demo models only when no real provider is configured.
+ */
+export function defaultModelSelection(
+  models: Array<Pick<ModelListItem, "ref" | "providerId" | "modelId" | "isDemo" | "available">>,
+  max = AUTO_SELECT_MAX,
+): string[] {
+  const available = models.filter((model) => model.available && isCandidateModel(model));
+  const real = available.filter((model) => !model.isDemo);
+  if (real.length > 0) {
+    const preferred = real.filter((model) => !NOT_PRESELECTED_PROVIDERS.includes(model.providerId));
+    const picks = new Map<string, string>(); // providerId → first model ref
+    for (const model of preferred.length > 0 ? preferred : real) {
+      if (!picks.has(model.providerId)) picks.set(model.providerId, model.ref);
+    }
+    return [...picks.values()].slice(0, max);
+  }
+  return available
+    .filter((model) => ["demo-concise", "demo-verbose", "demo-flaky"].includes(model.modelId))
+    .map((model) => model.ref);
+}
+
+/**
  * Auto-select router: picks up to `max` callable models for a task category.
  *
  * 1. Only available candidate models; real models over demo ones when any exist; the judge is

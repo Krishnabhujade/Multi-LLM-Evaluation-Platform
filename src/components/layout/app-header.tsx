@@ -19,6 +19,7 @@ const NAV = [
     label: "Leaderboard",
     match: (path: string) => path.startsWith("/leaderboard"),
   },
+  { href: "/criteria", label: "Criteria", match: (path: string) => path.startsWith("/criteria") },
   { href: "/models", label: "Models", match: (path: string) => path.startsWith("/models") },
 ];
 

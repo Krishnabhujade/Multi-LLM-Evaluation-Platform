@@ -2,6 +2,9 @@ import { buildJudgementSchema, type Judgement } from "@/server/evaluation/judge/
 
 export type ParseResult = { ok: true; judgement: Judgement } | { ok: false; error: string };
 
+/** Result of parsing any structured judge reply. */
+export type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
+
 /**
  * Finds the first balanced top-level JSON object in model output, tolerating markdown fences and
  * prose around it. String-aware, so braces inside string values do not confuse it.

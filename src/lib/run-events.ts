@@ -35,14 +35,25 @@ export type RunEvent =
       errorCode: LLMErrorCode;
       message: string;
     }
-  | { type: "judging.started"; judgeModelRef: string; total: number }
   | {
+      type: "judging.started";
+      judgeModelRef: string;
+      total: number;
+      /** What one progress step is: a scored response (standard) or a comparison (pairwise). */
+      unit: "response" | "comparison";
+    }
+  /** The judging plan changed because a model failed while judging was under way. */
+  | { type: "judging.planned"; total: number; unit: "response" | "comparison" }
+  | {
+      /** One judging step finished; `responseId` is set when the step scored a response. */
       type: "judging.progress";
-      responseId: string;
+      responseId?: string;
       status: "SCORED" | "FAILED";
       completed: number;
       total: number;
     }
+  /** A response's final scores are saved (pairwise: after all of its comparisons). */
+  | { type: "response.judged"; responseId: string; status: "SCORED" | "FAILED" }
   | { type: "run.completed"; runId: string; winnerResponseId: string | null }
   | { type: "run.failed"; runId: string; message: string };
 

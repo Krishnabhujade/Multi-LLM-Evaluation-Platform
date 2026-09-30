@@ -23,6 +23,8 @@ export interface CollectorDeps {
   deadline: number;
   signal?: AbortSignal;
   logger: Logger;
+  /** Called once per model as soon as its outcome is persisted (success or failure). */
+  onSettled?: (outcome: CandidateOutcome) => void;
 }
 
 type Emit = (event: RunEvent) => void;
@@ -71,6 +73,7 @@ export async function collectCandidates(
       };
       await deps.store.saveCandidateResult(slot.responseId, outcome).catch(() => undefined);
       emit(failedEvent(outcome));
+      deps.onSettled?.(outcome);
       return outcome;
     }),
   );
@@ -171,6 +174,7 @@ async function collectOne(
         }
       : failedEvent(outcome),
   );
+  deps.onSettled?.(outcome);
   return outcome;
 }
 

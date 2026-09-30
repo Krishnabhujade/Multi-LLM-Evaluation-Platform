@@ -5,6 +5,7 @@ import {
   buildRadarData,
   buildTokenBars,
   buildTraceRows,
+  buildWinMatrix,
   scoredSeries,
 } from "@/lib/chart-data";
 import { callDetail, responseDetail, runDetail } from "../../helpers/run-detail";
@@ -130,5 +131,97 @@ describe("chart data", () => {
 
   it("handles runs without calls", () => {
     expect(buildTraceRows(runDetail([alpha]))).toEqual({ rows: [], totalMs: 0 });
+  });
+});
+
+describe("buildWinMatrix", () => {
+  const a = responseDetail("a", "Alpha", { rank: 2, anonLabel: "B" });
+  const b = responseDetail("b", "Beta", { rank: 1, anonLabel: "A" });
+  const c = responseDetail("c", "Gamma", { rank: 3, anonLabel: "C" });
+  const failed = responseDetail("d", "Delta", { status: "FAILED", rank: null });
+  const allCriteria = (outcome: "A" | "B" | "TIE") =>
+    Object.fromEntries(
+      [
+        "accuracy",
+        "relevance",
+        "clarity",
+        "completeness",
+        "conciseness",
+        "instruction_following",
+      ].map((key) => [key, outcome]),
+    );
+  const run = runDetail([a, b, c, failed], {
+    mode: "PAIRWISE",
+    pairwise: [
+      {
+        responseAId: "a",
+        responseBId: "b",
+        winner: "B",
+        criteria: { ...allCriteria("B"), clarity: "TIE" },
+        consistent: false,
+        orders: 2,
+        summary: "Response A is more accurate.",
+        judgedBy: "test:judge",
+      },
+      {
+        responseAId: "a",
+        responseBId: "c",
+        winner: "A",
+        criteria: allCriteria("A"),
+        consistent: true,
+        orders: 2,
+        summary: "",
+        judgedBy: "test:judge",
+      },
+      {
+        responseAId: "b",
+        responseBId: "c",
+        winner: "TIE",
+        criteria: allCriteria("TIE"),
+        consistent: true,
+        orders: 1,
+        summary: "",
+        judgedBy: "test:judge",
+      },
+    ],
+  });
+
+  it("orders compared models by rank and keeps each model's series color", () => {
+    const matrix = buildWinMatrix(run);
+    expect(matrix.rows.map((row) => [row.label, row.seriesIndex])).toEqual([
+      ["Beta", 1],
+      ["Alpha", 0],
+      ["Gamma", 2],
+    ]);
+  });
+
+  it("shows every outcome from the row model's point of view", () => {
+    const matrix = buildWinMatrix(run);
+    expect(matrix.cells.b!.a).toMatchObject({
+      outcome: "WIN",
+      criteria: { won: 5, tied: 1, lost: 0 },
+      consistent: false,
+    });
+    expect(matrix.cells.a!.b).toMatchObject({
+      outcome: "LOSS",
+      criteria: { won: 0, tied: 1, lost: 5 },
+    });
+    expect(matrix.cells.a!.b!.perCriterion[0]).toEqual({
+      key: "accuracy",
+      name: "Accuracy",
+      outcome: "LOSS",
+    });
+    expect(matrix.cells.c!.b).toMatchObject({ outcome: "TIE", orders: 1 });
+    expect(matrix.cells.a!.a).toBeUndefined();
+  });
+
+  it("tallies records and consistency", () => {
+    const matrix = buildWinMatrix(run);
+    expect(matrix.records).toEqual({
+      a: { wins: 1, ties: 0, losses: 1 },
+      b: { wins: 1, ties: 1, losses: 0 },
+      c: { wins: 0, ties: 1, losses: 1 },
+    });
+    expect(matrix).toMatchObject({ consistentPairs: 2, totalPairs: 3 });
   });
 });

@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 /**
  * Built-in evaluation criteria. Each criterion is scored 0–10 by the judge; `defaultWeight` is in
  * percentage points and is normalized at scoring time, so weights need not sum to exactly 100.
@@ -69,3 +71,62 @@ export const BUILT_IN_CRITERIA: readonly CriterionDefinition[] = [
     defaultWeight: 15,
   },
 ];
+
+/** Custom criteria per owner — plenty for real use, bounded so judge prompts stay small. */
+export const MAX_CUSTOM_CRITERIA = 20;
+
+const optionalText = (max: number) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .transform((value) => value || undefined);
+
+/** Fields a user can set on a custom criterion (the key is derived from the name, once). */
+export const CriterionFieldsSchema = z.object({
+  name: z.string().trim().min(2, "Name needs at least 2 characters").max(60),
+  description: z
+    .string()
+    .trim()
+    .min(10, "Describe what the judge should assess (at least 10 characters)")
+    .max(600),
+  rubric: optionalText(1_000),
+  defaultWeight: z.number().min(0).max(100),
+});
+
+export const CreateCriterionSchema = CriterionFieldsSchema;
+/** Partial update; an empty rubric clears it. */
+export const UpdateCriterionSchema = CriterionFieldsSchema.partial().extend({
+  rubric: z.string().trim().max(1_000).optional(),
+});
+
+export type CriterionFields = Omit<z.output<typeof CriterionFieldsSchema>, "rubric"> & {
+  rubric?: string;
+};
+
+const KEY_PATTERN = /^[a-z][a-z0-9_]{1,40}$/;
+
+/**
+ * Derives a stable snake_case key from a criterion name ("Code Quality" → "code_quality"),
+ * avoiding `taken` keys with a numeric suffix. Keys never change after creation because stored
+ * scores reference them.
+ */
+export function criterionKeyFromName(name: string, taken: Iterable<string> = []): string {
+  const used = new Set(taken);
+  let base = name
+    .normalize("NFKD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^[^a-z]+/, "")
+    .replace(/_+$/, "")
+    .slice(0, 36)
+    .replace(/_+$/, "");
+  if (base === "") base = "custom_criterion";
+  else if (!KEY_PATTERN.test(base)) base = `custom_${base}`;
+
+  let key = base;
+  for (let suffix = 2; used.has(key); suffix += 1) key = `${base}_${suffix}`;
+  return key;
+}

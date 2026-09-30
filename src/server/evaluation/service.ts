@@ -1,6 +1,6 @@
 import "server-only";
 import type { RunDetail } from "@/lib/api-types";
-import type { CreateEvaluationRequest } from "@/lib/evaluation-request";
+import { MAX_PAIRWISE_MODELS, type CreateEvaluationRequest } from "@/lib/evaluation-request";
 import { selectModelsForCategory } from "@/lib/models";
 import { PrismaEvaluationRepository } from "@/server/db/evaluation-repository";
 import { getUnreliableModelRefs } from "@/server/db/model-health";
@@ -77,14 +77,11 @@ export async function createEvaluation(
   const registry = getProviderRegistry();
   const repo = getEvaluationRepository();
 
-  if (input.mode === "PAIRWISE") {
-    throw new ApiError(400, "MODE_NOT_SUPPORTED", "Pairwise evaluation is not available yet.");
-  }
-
   const judge = await resolveJudge(registry, env, input.judgeModel);
   const modelRefs = input.autoSelect
     ? selectModelsForCategory(input.category, await registry.listModels(), {
         judgeRef: judge.model.ref,
+        max: input.mode === "PAIRWISE" ? MAX_PAIRWISE_MODELS : undefined,
         // Health data improves the pick but must never block a run.
         avoid: await getUnreliableModelRefs(getPrisma()).catch(() => []),
       }).map((model) => model.ref)

@@ -101,6 +101,25 @@ export interface RunDetail {
   completedAt: string | null;
   responses: ResponseDetail[];
   calls: LlmCallDetail[];
+  /** Pairwise mode: every head-to-head comparison (empty in standard mode). */
+  pairwise: PairwiseComparisonDetail[];
+}
+
+export type PairOutcome = "A" | "B" | "TIE";
+
+/** One head-to-head comparison. A/B refer to responseAId/responseBId, not presentation order. */
+export interface PairwiseComparisonDetail {
+  responseAId: string;
+  responseBId: string;
+  winner: PairOutcome;
+  /** Outcome per criterion key. */
+  criteria: Record<string, PairOutcome>;
+  /** Both presentation orders agreed on every criterion. */
+  consistent: boolean;
+  /** Presentation orders that produced a valid verdict (1 or 2). */
+  orders: number;
+  summary: string;
+  judgedBy: string | null;
 }
 
 /** A history row: enough to scan past evaluations without loading every answer. */
@@ -155,4 +174,17 @@ export interface ModelListItem extends ModelSummary {
   contextWindow?: number;
   pricing?: { inputPerMTok: number; outputPerMTok: number };
   available: boolean;
+}
+
+/** A criterion definition: built-in (read-only) or custom. */
+export interface CriterionItem {
+  id: string;
+  key: string;
+  name: string;
+  description: string;
+  rubric: string | null;
+  /** Percentage points; normalized at scoring time. */
+  defaultWeight: number;
+  isBuiltIn: boolean;
+  createdAt: string;
 }

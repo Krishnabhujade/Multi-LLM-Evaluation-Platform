@@ -18,6 +18,8 @@ import type {
   ExecutionContext,
   JudgementRecord,
   LlmCallRecord,
+  PairOutcome,
+  PairwiseRecord,
 } from "@/server/evaluation/types";
 import { findCatalogProvider } from "@/server/llm/catalog";
 import type { ModelInfo } from "@/server/llm/types";
@@ -31,6 +33,13 @@ const RunCriteriaSchema = z.array(
     weight: z.number(),
   }),
 );
+
+const PairCriteriaSchema = z.record(
+  z.string(),
+  z.enum(["A", "B", "TIE"]) satisfies z.ZodType<PairOutcome>,
+);
+
+const ENSURED_MODEL_TTL_MS = 60 * 60 * 1000;
 
 export interface NewRun {
   userId?: string | null;
@@ -79,8 +88,24 @@ function criteriaJson(criteria: RunCriterion[]): Prisma.InputJsonValue {
 export class PrismaEvaluationRepository implements RunStore {
   constructor(private readonly prisma: PrismaClient) {}
 
+  /**
+   * Row ids of models upserted recently. Model rows never move, so re-upserting on every run
+   * would only refresh metadata (names, pricing); an hourly refresh keeps that current enough.
+   */
+  private readonly ensured = new Map<string, { id: Promise<string>; at: number }>();
+
   /** Upserts the provider and model rows for a catalog/discovered model; returns the model row id. */
   async ensureModel(model: ModelInfo): Promise<string> {
+    const cached = this.ensured.get(model.ref);
+    if (cached && Date.now() - cached.at < ENSURED_MODEL_TTL_MS) return cached.id;
+    const id = this.upsertModelRows(model);
+    this.ensured.set(model.ref, { id, at: Date.now() });
+    // A failed upsert must not be remembered.
+    id.catch(() => this.ensured.delete(model.ref));
+    return id;
+  }
+
+  private async upsertModelRows(model: ModelInfo): Promise<string> {
     const provider = {
       id: model.providerId,
       name: findCatalogProvider(model.providerId)?.name ?? model.providerName,
@@ -244,6 +269,22 @@ export class PrismaEvaluationRepository implements RunStore {
     ]);
   }
 
+  async savePairwiseComparison(runId: string, comparison: PairwiseRecord): Promise<void> {
+    await this.prisma.pairwiseComparison.create({
+      data: {
+        runId,
+        responseAId: comparison.responseAId,
+        responseBId: comparison.responseBId,
+        winner: comparison.winner,
+        criteria: comparison.criteria,
+        consistent: comparison.consistent,
+        orders: comparison.orders,
+        summary: comparison.summary,
+        judgedBy: comparison.judgedBy,
+      },
+    });
+  }
+
   async recordLlmCalls(calls: LlmCallRecord[]): Promise<void> {
     if (calls.length === 0) return;
     await this.prisma.llmCall.createMany({
@@ -304,24 +345,32 @@ export class PrismaEvaluationRepository implements RunStore {
   }
 
   async getRunDetail(runId: string): Promise<RunDetail | null> {
-    const run = await this.prisma.evaluationRun.findUnique({
-      where: { id: runId },
-      include: {
-        judgeModel: modelWithProvider,
-        responses: {
-          include: { model: modelWithProvider, scores: true },
-          orderBy: { createdAt: "asc" },
-        },
-        llmCalls: { include: { model: true }, orderBy: { startedAt: "asc" } },
-      },
-    });
+    // Independent reads run in parallel: one nested include would load relation levels one
+    // after another, paying a database round trip for each.
+    const [run, rows, calls, comparisons] = await Promise.all([
+      this.prisma.evaluationRun.findUnique({
+        where: { id: runId },
+        include: { judgeModel: modelWithProvider },
+      }),
+      this.prisma.modelResponse.findMany({
+        where: { runId },
+        include: { model: modelWithProvider, scores: true },
+        orderBy: { createdAt: "asc" },
+      }),
+      this.prisma.llmCall.findMany({
+        where: { runId },
+        include: { model: true },
+        orderBy: { startedAt: "asc" },
+      }),
+      this.prisma.pairwiseComparison.findMany({ where: { runId }, orderBy: { createdAt: "asc" } }),
+    ]);
     if (!run) return null;
 
     const criteria = RunCriteriaSchema.parse(run.criteria);
     const criterionOrder = (key: string) =>
       criteria.findIndex((criterion) => criterion.key === key);
 
-    const responses: ResponseDetail[] = run.responses.map((response) => ({
+    const responses: ResponseDetail[] = rows.map((response) => ({
       id: response.id,
       model: toModelSummary(response.model),
       status: response.status,
@@ -379,7 +428,7 @@ export class PrismaEvaluationRepository implements RunStore {
       startedAt: iso(run.startedAt),
       completedAt: iso(run.completedAt),
       responses,
-      calls: run.llmCalls.map((call) => ({
+      calls: calls.map((call) => ({
         id: call.id,
         responseId: call.responseId,
         kind: call.kind,
@@ -394,6 +443,16 @@ export class PrismaEvaluationRepository implements RunStore {
         latencyMs: call.latencyMs,
         inputTokens: call.inputTokens,
         outputTokens: call.outputTokens,
+      })),
+      pairwise: comparisons.map((comparison) => ({
+        responseAId: comparison.responseAId,
+        responseBId: comparison.responseBId,
+        winner: comparison.winner,
+        criteria: PairCriteriaSchema.parse(comparison.criteria),
+        consistent: comparison.consistent,
+        orders: comparison.orders,
+        summary: comparison.summary,
+        judgedBy: comparison.judgedBy,
       })),
     };
   }

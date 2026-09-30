@@ -1,6 +1,6 @@
 import type { RunEvent } from "@/lib/run-events";
 import { collectCandidates } from "@/server/evaluation/collector";
-import { judgeCandidates, type JudgingDeps } from "@/server/evaluation/judging";
+import { startJudging, type JudgingDeps } from "@/server/evaluation/judging";
 import { weightedOverall } from "@/server/evaluation/scoring/overall";
 import { rankResponses } from "@/server/evaluation/scoring/ranking";
 import type { RunStore } from "@/server/evaluation/store";
@@ -44,8 +44,8 @@ export async function claimRun(store: RunStore, runId: string): Promise<void> {
 }
 
 /**
- * Runs a claimed evaluation end to end: fan out to every model, then (in later stages) judge,
- * score and pick a winner. Progress is reported through `emit`; the transport (SSE, a queue
+ * Runs a claimed evaluation end to end: fan out to every model, judge each response as it
+ * arrives, then score and pick a winner. Progress is reported through `emit`; the transport (SSE, a queue
  * worker, a test) is the caller's concern. Never throws for model or judge failures.
  */
 export async function executeRun(
@@ -76,6 +76,21 @@ export async function executeRun(
       })),
     });
 
+    // Judging runs alongside collection: each response is judged as soon as it arrives.
+    const judging = startJudging(
+      context,
+      {
+        store: deps.store,
+        registry: deps.registry,
+        timeoutMs: deps.timeoutMs,
+        maxRetries: deps.maxRetries,
+        deadline,
+        signal,
+        logger: log,
+        judge: deps.judge,
+      },
+      emit,
+    );
     const outcomes = await collectCandidates(
       context,
       {
@@ -86,6 +101,8 @@ export async function executeRun(
         deadline,
         signal,
         logger: log,
+        onSettled: (outcome) =>
+          outcome.status === "SUCCESS" ? judging.submit(outcome) : judging.skip(),
       },
       emit,
     );
@@ -104,21 +121,8 @@ export async function executeRun(
       return;
     }
 
-    const judgements = await judgeCandidates(
-      context,
-      succeeded,
-      {
-        store: deps.store,
-        registry: deps.registry,
-        timeoutMs: deps.timeoutMs,
-        maxRetries: deps.maxRetries,
-        deadline,
-        signal,
-        logger: log,
-        judge: deps.judge,
-      },
-      emit,
-    );
+    const judgements = await judging.finish();
+    log.info("Judging finished", { elapsedMs: now() - startedAt });
     const weights = new Map(
       context.run.criteria.map((criterion) => [criterion.key, criterion.weight]),
     );

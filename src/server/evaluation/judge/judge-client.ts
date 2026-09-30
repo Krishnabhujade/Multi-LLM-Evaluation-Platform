@@ -1,5 +1,5 @@
 import type { RunCriterion } from "@/lib/api-types";
-import { parseJudgement } from "@/server/evaluation/judge/parse";
+import { parseJudgement, type Parsed } from "@/server/evaluation/judge/parse";
 import { repairInstruction } from "@/server/evaluation/judge/prompt";
 import type { Judgement } from "@/server/evaluation/judge/schema";
 import { invokeModel } from "@/server/llm/invoke";
@@ -27,6 +27,9 @@ export interface JudgeClientDeps {
   onCall?: (trace: JudgeCallTrace) => void | Promise<void>;
 }
 
+export type StructuredJudgeResult<T> =
+  { ok: true; value: T; judgedBy: string } | { ok: false; error: string };
+
 export type JudgeResult =
   { ok: true; judgement: Judgement; judgedBy: string } | { ok: false; error: string };
 
@@ -34,18 +37,22 @@ export type JudgeResult =
 const REPAIR_ATTEMPTS = 1;
 
 /**
- * Obtains a validated judgement, degrading gracefully:
+ * Obtains a validated structured verdict from the judge chain, degrading gracefully:
  *   1. ask the judge (JSON mode, temperature 0);
  *   2. if the output fails validation, ask once more with the validation error attached;
  *   3. if the judge is unavailable or still invalid, try the next judge in the fallback chain.
- * Returns an error result (never throws) when every judge fails, so the response is simply
- * shown as "not scored" instead of failing the whole evaluation.
+ * Returns an error result (never throws) when every judge fails. Shared by every strategy; each
+ * supplies its own parser and repair instruction.
  */
-export async function runJudge(
-  request: { judgeRefs: string[]; messages: ChatMessage[]; criteria: RunCriterion[] },
+export async function runStructuredJudge<T>(
+  request: {
+    judgeRefs: string[];
+    messages: ChatMessage[];
+    parse: (text: string) => Parsed<T>;
+    repair: (problem: string) => string;
+  },
   deps: JudgeClientDeps,
-): Promise<JudgeResult> {
-  const criterionKeys = request.criteria.map((criterion) => criterion.key);
+): Promise<StructuredJudgeResult<T>> {
   const failures: string[] = [];
 
   for (const ref of request.judgeRefs) {
@@ -93,14 +100,14 @@ export async function runJudge(
         break; // transport failure: repairing the format won't help, try the next judge
       }
 
-      const parsed = parseJudgement(outcome.result.content, criterionKeys);
-      if (parsed.ok) return { ok: true, judgement: parsed.judgement, judgedBy: ref };
+      const parsed = request.parse(outcome.result.content);
+      if (parsed.ok) return { ok: true, value: parsed.value, judgedBy: ref };
 
       failures.push(`${ref}: invalid output (${parsed.error})`);
       messages = [
         ...request.messages,
         { role: "assistant", content: outcome.result.content },
-        { role: "user", content: repairInstruction(parsed.error, request.criteria) },
+        { role: "user", content: request.repair(parsed.error) },
       ];
     }
   }
@@ -109,4 +116,28 @@ export async function runJudge(
     ok: false,
     error: `No judge produced a valid evaluation — ${failures.join("; ") || "no judge configured"}`,
   };
+}
+
+/**
+ * Pointwise judgement of one response. Returns an error result when every judge fails, so the
+ * response is simply shown as "not scored" instead of failing the whole evaluation.
+ */
+export async function runJudge(
+  request: { judgeRefs: string[]; messages: ChatMessage[]; criteria: RunCriterion[] },
+  deps: JudgeClientDeps,
+): Promise<JudgeResult> {
+  const criterionKeys = request.criteria.map((criterion) => criterion.key);
+  const result = await runStructuredJudge<Judgement>(
+    {
+      judgeRefs: request.judgeRefs,
+      messages: request.messages,
+      parse: (text) => {
+        const parsed = parseJudgement(text, criterionKeys);
+        return parsed.ok ? { ok: true, value: parsed.judgement } : parsed;
+      },
+      repair: (problem) => repairInstruction(problem, request.criteria),
+    },
+    deps,
+  );
+  return result.ok ? { ok: true, judgement: result.value, judgedBy: result.judgedBy } : result;
 }
