@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RunDetail } from "@/lib/api-types";
 import type { LLMErrorCode } from "@/lib/llm-errors";
+import { createResponseOrder } from "@/lib/response-order";
 import type { RunEvent } from "@/lib/run-events";
 import { readServerSentEvents } from "@/lib/sse-client";
 
@@ -72,22 +73,26 @@ export function useRunStream(initial: RunDetail) {
   const [live, setLive] = useState(() => liveOf(initial));
   const [judging, setJudging] = useState<JudgingProgress | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [order] = useState(createResponseOrder);
 
   const started = useRef(false);
   const mounted = useRef(true);
   const refreshTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   const refresh = useCallback(async (): Promise<RunDetail | null> => {
+    const ticket = order.ticket();
     try {
       const response = await fetch(`/api/evaluations/${initial.id}`, { cache: "no-store" });
       if (!response.ok) return null;
       const next = (await response.json()) as RunDetail;
+      // Refreshes overlap (a slow one can finish after a newer one): never show older data.
+      if (!order.accept(ticket)) return null;
       if (mounted.current) setRun(next);
       return next;
     } catch {
       return null;
     }
-  }, [initial.id]);
+  }, [initial.id, order]);
 
   /** Coalesce bursts of events (several models finishing together) into one fetch. */
   const scheduleRefresh = useCallback(() => {
