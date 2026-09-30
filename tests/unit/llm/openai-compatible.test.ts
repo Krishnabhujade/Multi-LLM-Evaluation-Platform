@@ -205,3 +205,72 @@ describe("OpenAI-compatible adapter (Groq)", () => {
     ]);
   });
 });
+
+describe("Groq output-token caps", () => {
+  const tooLarge = (limit: number, requested: number, kind: "OTPM" | "TPM" = "OTPM") =>
+    jsonResponse(
+      {
+        error: {
+          message:
+            kind === "OTPM"
+              ? `Request too large for model \`qwen/qwen3.8-27b\` in organization \`org_01abcdefgh23\` service tier \`on_demand\` on output tokens per minute (OTPM): Limit ${limit}, Requested ${requested}. The request's expected output tokens exceed the enforced limit; reduce max_tokens.`
+              : `Request too large for model \`qwen/qwen3.8-27b\` in organization \`org_01abcdefgh23\` service tier \`on_demand\` on tokens per minute (TPM): Limit ${limit}, Requested ${requested}, please reduce your message size and try again.`,
+          type: "tokens",
+        },
+      },
+      429,
+    );
+  const maxTokensOf = (call: { body: unknown }) =>
+    (call.body as { max_tokens?: number }).max_tokens;
+
+  it("retries an oversized request at once with a budget that fits, and remembers the cap", async () => {
+    const { provider, calls } = groqWith((call) =>
+      maxTokensOf(call)! > 1000
+        ? tooLarge(1000, maxTokensOf(call)!)
+        : jsonResponse(chatCompletion("Fits.")),
+    );
+
+    await expect(provider.generate({ ...request, maxTokens: 1024 })).resolves.toMatchObject({
+      content: "Fits.",
+    });
+    expect(calls.map(maxTokensOf)).toEqual([1024, 1000]);
+
+    // Later requests to the same model fit from the start; smaller budgets are left alone.
+    await provider.generate({ ...request, maxTokens: 2048 });
+    await provider.generate({ ...request, maxTokens: 512 });
+    expect(calls.map(maxTokensOf)).toEqual([1024, 1000, 1000, 512]);
+  });
+
+  it("does not remember caps derived from a total-token overage (they depend on the prompt)", async () => {
+    let rejected = false;
+    const { provider, calls } = groqWith(() => {
+      if (!rejected) {
+        rejected = true;
+        return tooLarge(8000, 8200, "TPM");
+      }
+      return jsonResponse(chatCompletion("ok"));
+    });
+    await provider.generate({ ...request, maxTokens: 1024 });
+    await provider.generate({ ...request, maxTokens: 1024 });
+    expect(calls.map(maxTokensOf)).toEqual([1024, 824, 1024]);
+  });
+
+  it("keeps ordinary rate limits as errors and redacts the organization id", async () => {
+    const { provider, calls } = groqWith(() =>
+      jsonResponse(
+        {
+          error: {
+            message:
+              "Rate limit reached for model `x` in organization `org_01abcdefgh23`. Please try again in 5s.",
+          },
+        },
+        429,
+        { "retry-after": "5" },
+      ),
+    );
+    const error = await provider.generate(request).catch((caught: unknown) => caught);
+    expect(error).toMatchObject({ code: "RATE_LIMITED", retryAfterMs: 5000 });
+    expect((error as Error).message).not.toContain("org_01");
+    expect(calls).toHaveLength(1);
+  });
+});

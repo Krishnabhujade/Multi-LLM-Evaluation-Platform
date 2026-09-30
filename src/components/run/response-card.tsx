@@ -1,6 +1,7 @@
 "use client";
 
 import { Gavel } from "lucide-react";
+import { CutOffNotice } from "@/components/shared/cut-off-notice";
 import { Markdown } from "@/components/shared/markdown";
 import { ModelName } from "@/components/shared/model-name";
 import { ResponseStatusLabel, errorLabel } from "@/components/shared/response-status";
@@ -9,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { ResponseDetail, RunCriterion } from "@/lib/api-types";
+import { isCutOff } from "@/lib/finish-reason";
 import {
   formatCost,
   formatCriterionScore,
@@ -164,6 +166,7 @@ export function ResponseCard({
             </TabsList>
             <TabsContent value="response" className="pt-3">
               <Markdown>{response.content ?? ""}</Markdown>
+              {isCutOff(response.finishReason) && <CutOffNotice />}
             </TabsContent>
             <TabsContent value="evaluation" className="pt-3">
               <Evaluation response={response} criteria={criteria} />

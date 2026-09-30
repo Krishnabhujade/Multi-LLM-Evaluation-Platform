@@ -2,12 +2,14 @@
 
 import { Scale, Trophy } from "lucide-react";
 import { useState } from "react";
+import { CutOffNotice } from "@/components/shared/cut-off-notice";
 import { Markdown } from "@/components/shared/markdown";
 import { ModelName } from "@/components/shared/model-name";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import type { ResponseDetail } from "@/lib/api-types";
+import { isCutOff } from "@/lib/finish-reason";
 import { formatCost, formatLatency, formatScore, formatTokens } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -122,6 +124,7 @@ export function WinnerCard({
               {expanded ? "Collapse answer" : "Show full answer"}
             </Button>
           )}
+          {isCutOff(winner.finishReason) && <CutOffNotice />}
         </div>
       </CardContent>
     </Card>

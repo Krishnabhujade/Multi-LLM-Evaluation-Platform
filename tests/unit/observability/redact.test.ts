@@ -21,6 +21,14 @@ describe("redactSecrets", () => {
     );
   });
 
+  it("removes organization ids that provider errors echo", () => {
+    expect(
+      redactSecrets(
+        "Rate limit reached for model `qwen/qwen3.8-27b` in organization `org_01abcdEFGH2345`",
+      ),
+    ).toBe("Rate limit reached for model `qwen/qwen3.8-27b` in organization `[REDACTED]`");
+  });
+
   it("leaves ordinary text alone", () => {
     expect(redactSecrets("Rate limit reached for model llama-3.3-70b")).toBe(
       "Rate limit reached for model llama-3.3-70b",

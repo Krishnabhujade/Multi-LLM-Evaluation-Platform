@@ -10,6 +10,9 @@ const SECRET_PATTERNS: RegExp[] = [
   /\bsk-[A-Za-z0-9_-]{16,}/g, // OpenAI-style
   /\bhf_[A-Za-z0-9]{8,}/g, // Hugging Face
   /\bAIza[0-9A-Za-z_-]{20,}/g, // Google
+  // Account identifiers are not credentials, but provider errors echo them and result pages
+  // are shareable, so they are removed too.
+  /\borg[_-][A-Za-z0-9]{8,}/g, // Groq / OpenAI organization ids
   /([?&](?:key|api_key|apikey|token)=)[^&\s]+/gi,
 ];
 
